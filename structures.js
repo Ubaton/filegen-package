@@ -1,39 +1,37 @@
 export const structures = {
-  'react-client': {
-    'src/': {
-      'app/': {
-        'layout.tsx': `"use client";
-export default function RootLayout({
-  children,
-}) {
+  "react-client": {
+    "src/": {
+      "app/": {
+        "layout.tsx": `"use client";
+export default function RootLayout({ children }) {
   return (
     <html lang="en">
       <body>{children}</body>
     </html>
   );
 }`,
-        'page.tsx': `"use client";
+        "page.tsx": `"use client";
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Check, Copy, Folder, FileCode, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import structures from "@/data/structures";`
-      }
-    }
+import structures from "@/data/structures";`,
+      },
+    },
   },
-  'e-commerce': {
-    'src/': {
-      'app/': {
-        'layout.tsx': `export default function RootLayout({ children }) {
+  "e-commerce": {
+    "src/": {
+      "app/": {
+        "layout.tsx": `export default function RootLayout({ children }) {
   return (
     <html lang="en">
       <body>{children}</body>
     </html>
   );
 }`,
-        'page.tsx': `import Products from '@/components/Products';
+        "page.tsx": `import Products from '@/components/Products';
 import Cart from '@/components/Cart';
 
 export default function Home() {
@@ -50,10 +48,10 @@ export default function Home() {
       </div>
     </main>
   );
-}`
+}`,
       },
-      'components/': {
-        'Products.tsx': `'use client';
+      "components/": {
+        "Products.tsx": `'use client';
 import { useState } from 'react';
 import { useCart } from '@/hooks/useCart';
 import { Product } from '@/types';
@@ -68,7 +66,7 @@ export default function Products() {
         <div key={product.id} className="border rounded-lg p-4">
           <img src={product.image} alt={product.name} className="w-full h-48 object-cover mb-4" />
           <h3 className="text-lg font-semibold">{product.name}</h3>
-          <p className="text-gray-600">\${product.price}</p>
+          <p className="text-gray-600">\${product.price.toFixed(2)}</p>
           <button
             onClick={() => addToCart(product)}
             className="mt-4 w-full bg-blue-500 text-white py-2 rounded hover:bg-blue-600"
@@ -80,7 +78,7 @@ export default function Products() {
     </div>
   );
 }`,
-        'Cart.tsx': `'use client';
+        "Cart.tsx": `'use client';
 import { useCart } from '@/hooks/useCart';
 
 export default function Cart() {
@@ -91,36 +89,40 @@ export default function Cart() {
   return (
     <div className="border rounded-lg p-4">
       <h2 className="text-xl font-bold mb-4">Shopping Cart</h2>
-      {items.map((item) => (
-        <div key={item.id} className="flex items-center gap-4 mb-4">
-          <img src={item.image} alt={item.name} className="w-16 h-16 object-cover" />
-          <div>
-            <h3 className="font-semibold">{item.name}</h3>
-            <p className="text-gray-600">\${item.price}</p>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => updateQuantity(item.id, Math.max(0, item.quantity - 1))}
-                className="px-2 py-1 bg-gray-100 rounded"
-              >
-                -
-              </button>
-              <span>{item.quantity}</span>
-              <button
-                onClick={() => updateQuantity(item.id, item.quantity + 1)}
-                className="px-2 py-1 bg-gray-100 rounded"
-              >
-                +
-              </button>
-              <button
-                onClick={() => removeFromCart(item.id)}
-                className="text-red-500 ml-2"
-              >
-                Remove
-              </button>
+      {items.length === 0 ? (
+        <p className="text-gray-500">Your cart is empty.</p>
+      ) : (
+        items.map((item) => (
+          <div key={item.id} className="flex items-center gap-4 mb-4">
+            <img src={item.image} alt={item.name} className="w-16 h-16 object-cover" />
+            <div>
+              <h3 className="font-semibold">{item.name}</h3>
+              <p className="text-gray-600">\${item.price.toFixed(2)}</p>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => updateQuantity(item.id, Math.max(0, item.quantity - 1))}
+                  className="px-2 py-1 bg-gray-100 rounded"
+                >
+                  -
+                </button>
+                <span>{item.quantity}</span>
+                <button
+                  onClick={() => updateQuantity(item.id, item.quantity + 1)}
+                  className="px-2 py-1 bg-gray-100 rounded"
+                >
+                  +
+                </button>
+                <button
+                  onClick={() => removeFromCart(item.id)}
+                  className="text-red-500 ml-2"
+                >
+                  Remove
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      ))}
+        ))
+      )}
       <div className="border-t pt-4 mt-4">
         <p className="text-xl font-bold">Total: \${total.toFixed(2)}</p>
         <button className="w-full bg-green-500 text-white py-2 rounded mt-4 hover:bg-green-600">
@@ -129,10 +131,10 @@ export default function Cart() {
       </div>
     </div>
   );
-}`
+}`,
       },
-      'hooks/': {
-        'useCart.ts': `import { create } from 'zustand';
+      "hooks/": {
+        "useCart.ts": `import { create } from 'zustand';
 import { Product } from '@/types';
 
 interface CartItem extends Product {
@@ -174,29 +176,29 @@ export const useCart = create<CartStore>((set) => ({
             item.id === productId ? { ...item, quantity } : item
           ),
     })),
-}));`
+}));`,
       },
-      'types/': {
-        'index.ts': `export interface Product {
+      "types/": {
+        "index.ts": `export interface Product {
   id: string;
   name: string;
   price: number;
   image: string;
-}`
-      }
-    }
+}`,
+      },
+    },
   },
-  'blog-post': {
-    'src/': {
-      'app/': {
-        'layout.tsx': `export default function RootLayout({ children }) {
+  "blog-post": {
+    "src/": {
+      "app/": {
+        "layout.tsx": `export default function RootLayout({ children }) {
   return (
     <html lang="en">
       <body>{children}</body>
     </html>
   );
 }`,
-        'page.tsx': `import BlogList from '@/components/BlogList';
+        "page.tsx": `import BlogList from '@/components/BlogList';
 import FeaturedPosts from '@/components/FeaturedPosts';
 
 export default function Home() {
@@ -208,7 +210,7 @@ export default function Home() {
     </main>
   );
 }`,
-        'posts/[slug]/page.tsx': `import { getPostBySlug } from '@/lib/posts';
+        "posts/[slug]/page.tsx": `import { getPostBySlug } from '@/lib/posts';
 
 export default function PostPage({ params }: { params: { slug: string } }) {
   const post = getPostBySlug(params.slug);
@@ -230,10 +232,10 @@ export default function PostPage({ params }: { params: { slug: string } }) {
       <div dangerouslySetInnerHTML={{ __html: post.content }} />
     </article>
   );
-}`
+}`,
       },
-      'components/': {
-        'BlogList.tsx': `import Link from 'next/link';
+      "components/": {
+        "BlogList.tsx": `import Link from 'next/link';
 import { getPosts } from '@/lib/posts';
 
 export default function BlogList() {
@@ -269,7 +271,7 @@ export default function BlogList() {
     </div>
   );
 }`,
-        'FeaturedPosts.tsx': `import Link from 'next/link';
+        "FeaturedPosts.tsx": `import Link from 'next/link';
 import { getFeaturedPosts } from '@/lib/posts';
 
 export default function FeaturedPosts() {
@@ -309,10 +311,10 @@ export default function FeaturedPosts() {
       ))}
     </div>
   );
-}`
+}`,
       },
-      'lib/': {
-        'posts.ts': `import { Post } from '@/types';
+      "lib/": {
+        "posts.ts": `import { Post } from '@/types';
 
 export function getPosts(): Post[] {
   // Implement your data fetching logic here
@@ -325,10 +327,10 @@ export function getFeaturedPosts(): Post[] {
 
 export function getPostBySlug(slug: string): Post | undefined {
   return getPosts().find((post) => post.slug === slug);
-}`
+}`,
       },
-      'types/': {
-        'index.ts': `export interface Author {
+      "types/": {
+        "index.ts": `export interface Author {
   name: string;
   avatar: string;
 }
@@ -342,8 +344,8 @@ export interface Post {
   author: Author;
   coverImage: string;
   featured?: boolean;
-}`
-      }
-    }
-  }
-}
+}`,
+      },
+    },
+  },
+};
