@@ -1,6 +1,15 @@
-export interface Product {
-  id: string;
+export interface Author {
   name: string;
-  price: number;
-  image: string;
+  avatar: string;
+}
+
+export interface Post {
+  slug: string;
+  title: string;
+  excerpt: string;
+  content: string;
+  date: string;
+  author: Author;
+  coverImage: string;
+  featured?: boolean;
 }
