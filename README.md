@@ -1,4 +1,4 @@
-# FileGen
+# [FileGen](https://filegen.vercel.app/)
 
 A local file structure generator for your projects. For more information, visit [FileGen](https://filegen.vercel.app/).
 
