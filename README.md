@@ -4,7 +4,7 @@
 # [FileGen](https://filegen.vercel.app/)
 
 A local file structure generator for your projects.  
- [Visit Website](https://filegen.vercel.app/) | [Documentation](https://filegen.vercel.app/) | [Report Bug](https://github.com/yourusername/filegen-package/issues)
+ [Visit Website](https://filegen.vercel.app/) | [Documentation](https://filegen.vercel.app/docs) | [Report Bug](https://github.com/Ubaton/filegen-package/issues)
 
 </div>
 

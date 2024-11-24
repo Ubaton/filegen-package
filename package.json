@@ -16,5 +16,11 @@
     "chalk": "^5.3.0",
     "commander": "^11.1.0",
     "fs-extra": "^11.2.0"
-  }
+  },
+  "author": "Raymond Ngobeni",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Ubaton/filegen-package"
+  },
+  "homepage": "https://filegen.vercel.app/"
 }
