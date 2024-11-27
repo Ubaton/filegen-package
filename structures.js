@@ -2,13 +2,15 @@ export const structures = {
   "e-commerce": {
     "src/": {
       "app/": {
-        "layout.tsx": `export default function RootLayout({ children }) {
-          return (
-            <html lang="en">
-              <body>{children}</body>
-            </html>
-          );
-        }`,
+        "layout.tsx": `import React from "react"
+
+        export default function RootLayout({ children }) {
+            return (
+              <html lang="en">
+                <body>{children}</body>
+              </html>
+            );
+          }`,
         "page.tsx": `import Products from '@/components/Products';
           import Cart from '@/components/Cart';
           
@@ -258,7 +260,10 @@ export const structures = {
   "blog-post": {
     "src/": {
       "app/": {
-        "layout.tsx": `export default function RootLayout({ children }) {
+        "layout.tsx": `
+        import React from "react"
+
+        export default function RootLayout({ children }) {
             return (
               <html lang="en">
                 <body>{children}</body>
@@ -993,13 +998,15 @@ export const structures = {
   portfolio: {
     "src/": {
       "app/": {
-        "layout.tsx": `export default function RootLayout({ children }) {
-        return (
-          <html lang="en">
-            <body>{children}</body>
-          </html>
-        );
-      }`,
+        "layout.tsx": `import React from "react"
+
+        export default function RootLayout({ children }) {
+            return (
+              <html lang="en">
+                <body>{children}</body>
+              </html>
+            );
+          }`,
         "page.tsx": `import Hero from '@/components/Hero';
         import ProductShowcase from '@/components/ProductShowcase';
         import SolutionShowcase from '@/components/SolutionShowcase';
@@ -1143,7 +1150,13 @@ export const structures = {
   saas: {
     "src/": {
       "app/": {
-        "layout.tsx": `export default function RootLayout({ children }) {
+        "layout.tsx": `
+
+        import React from "react";
+        import Header from "@/components/Header";
+        import Footer from "@/components/Footer";
+
+        export default function RootLayout({ children }) {
         return (
           <html lang="en">
             <body>
@@ -1333,7 +1346,12 @@ export const structures = {
   community: {
     "src/": {
       "app/": {
-        "layout.tsx": `export default function RootLayout({ children }) {
+        "layout.tsx": `
+        import React from "react";
+        import Header from "@/components/Header";
+        import Footer from "@/components/Footer";
+
+        export default function RootLayout({ children }) {
         return (
           <html lang="en">
             <body>
@@ -1535,7 +1553,13 @@ export const structures = {
   learning: {
     "src/": {
       "app/": {
-        "layout.tsx": `export default function RootLayout({ children }) {
+        "layout.tsx": `
+
+        import React from 'react';
+        import Header from '@/components/Header';
+        import Footer from '@/components/Footer';
+
+        export default function RootLayout({ children }) {
         return (
           <html lang="en">
             <body>
@@ -1731,7 +1755,23 @@ export const structures = {
   news: {
     "src/": {
       "app/": {
-        "layout.tsx": `export default function RootLayout({ children }) {
+        "globals.css": `@tailwind base;
+        @tailwind components;
+        @tailwind utilities;
+
+        .btn-primary {
+          @apply bg-blue-600 text-white px-6 py-3 rounded hover:bg-blue-700;
+        }
+        .btn-secondary {
+          @apply bg-gray-100 text-blue-600 px-6 py-3 rounded hover:bg-gray-200;
+        }`,
+        "layout.tsx": `
+
+        import React from 'react';
+        import Header from '@/components/Header';
+        import Footer from '@/components/Footer';
+
+        export default function RootLayout({ children }) {
         return (
           <html lang="en">
             <body>
@@ -1806,7 +1846,12 @@ export const structures = {
         },
       },
       "components/": {
-        "Header.tsx": `export default function Header() {
+        "Header.tsx": `
+        ""use client";
+
+        import React from 'react';
+
+        export default function Header() {
         return (
           <header className="bg-gray-800 text-white py-4">
             <nav className="container mx-auto flex justify-between">
@@ -1879,18 +1924,6 @@ export const structures = {
         export async function getArticlesByCategory(categoryId) { /* Fetch articles by category */ }
         export async function getArticleById(id) { /* Fetch article by ID */ }
         export async function searchArticles(query) { /* Search articles */ }`,
-      },
-      "styles/": {
-        "globals.css": `@tailwind base;
-        @tailwind components;
-        @tailwind utilities;
-
-        .btn-primary {
-          @apply bg-blue-600 text-white px-6 py-3 rounded hover:bg-blue-700;
-        }
-        .btn-secondary {
-          @apply bg-gray-100 text-blue-600 px-6 py-3 rounded hover:bg-gray-200;
-        }`,
       },
       "types/": {
         "index.ts": `export interface Article { id: string; title: string; content: string; publishedDate: string; }

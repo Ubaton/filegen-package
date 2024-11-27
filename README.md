@@ -109,7 +109,7 @@ Use arrow keys to navigate through templates and space bar to select. Press ente
 
 ## 📄 License
 
-MIT
+[MIT](https://opensource.org/licenses/MIT)
 
 ---
 
