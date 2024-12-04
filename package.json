@@ -27,5 +27,6 @@
     "file",
     "generate",
     "template"
-  ]
+  ],
+  "license": "MIT"
 }
