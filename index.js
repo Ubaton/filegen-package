@@ -138,15 +138,20 @@ async function installDependencies(targetDir, options) {
       {
         category: "Styling",
         condition: true,
-        dependencies: 
-          options.styling === "Styled Components" 
-            ? ["styled-components"] 
-            : options.styling === "Chakra UI" 
-              ? ["@chakra-ui/react", "@emotion/react", "@emotion/styled", "framer-motion"]
-              : [],
-        devDependencies: 
-          options.styling === "Styled Components" 
-            ? ["@types/styled-components"] 
+        dependencies:
+          options.styling === "Styled Components"
+            ? ["styled-components"]
+            : options.styling === "Chakra UI"
+            ? [
+                "@chakra-ui/react",
+                "@emotion/react",
+                "@emotion/styled",
+                "framer-motion",
+              ]
+            : [],
+        devDependencies:
+          options.styling === "Styled Components"
+            ? ["@types/styled-components"]
             : [],
         prompt: `Would you like to install ${options.styling} dependencies?`,
       },
@@ -160,7 +165,7 @@ async function installDependencies(targetDir, options) {
     ];
 
     // Filter out groups that don't meet their conditions
-    const filteredGroups = dependencyGroups.filter(group => group.condition);
+    const filteredGroups = dependencyGroups.filter((group) => group.condition);
 
     // Sequentially install dependencies with user confirmation
     for (const group of filteredGroups) {
@@ -186,10 +191,14 @@ async function installDependencies(targetDir, options) {
 
         // Install development dependencies
         if (group.devDependencies.length > 0) {
-          await execPromise(`npm install -D ${group.devDependencies.join(" ")}`);
+          await execPromise(
+            `npm install -D ${group.devDependencies.join(" ")}`
+          );
         }
 
-        spinner.succeed(`${group.category} dependencies installed successfully!`);
+        spinner.succeed(
+          `${group.category} dependencies installed successfully!`
+        );
       } else {
         spinner.info(`Skipped ${group.category} dependencies installation.`);
       }
@@ -330,62 +339,34 @@ async function promptProjectDetails() {
 program
   .version("2.0.0")
   .description(
-    chalk.cyan(
-      "🚀 Next.js Project Generator - Create modern web applications with ease!"
-    )
+    "Next.js project generator with customizable templates and features."
   )
   .action(async () => {
-    console.log(chalk.bold.green("Welcome to the Next.js Project Generator!"));
-
     try {
-      // Get project details
-      const { template, projectName, options } = await promptProjectDetails();
+      const projectDetails = await promptProjectDetails();
+      const targetDir = path.join(process.cwd(), projectDetails.projectName);
 
-      // Create project directory
-      const projectDir = path.join(process.cwd(), projectName);
-      await fs.ensureDir(projectDir);
+      await fs.ensureDir(targetDir);
 
-      // Installation steps
-      await installNextjs(projectDir);
-      await replaceSourceWithTemplate(template, projectDir, options);
-      await installDependencies(projectDir, options);
+      console.log(chalk.green(`\nGenerating project at ${targetDir}`));
 
-      // Final output
-      console.log(chalk.green("\n✨ Project generated successfully! 🎉"));
-      console.log(chalk.cyan("\nNext steps:"));
-      console.log(
-        `1. Navigate to project directory:`,
-        chalk.yellow(`cd ${projectName}`)
+      await installNextjs(targetDir);
+      await replaceSourceWithTemplate(
+        projectDetails.template,
+        targetDir,
+        projectDetails.options
       );
-      console.log("2. Start development server:", chalk.yellow("npm run dev"));
+      await installDependencies(targetDir, projectDetails.options);
 
-      // Optional recommendations based on selected options
-      if (options.useAuth) {
-        console.log(
-          chalk.yellow("💡 Tip:"),
-          "Configure your authentication strategy in the auth configuration files"
-        );
-      }
-
-      if (options.useDatabase) {
-        console.log(
-          chalk.yellow("💡 Tip:"),
-          "Run prisma init and set up your database connection"
-        );
-      }
+      console.log(chalk.green("\nProject setup complete!"));
+      console.log(
+        chalk.blue(
+          `\nNext steps:\n1. cd ${projectDetails.projectName}\n2. npm run dev\n`
+        )
+      );
     } catch (error) {
       logError("Project generation failed", error);
     }
   });
 
 program.parse(process.argv);
-
-// Add helpful error handling for unhandled promises
-process.on("unhandledRejection", (reason, promise) => {
-  console.error(
-    chalk.red("Unhandled Rejection at:"),
-    promise,
-    chalk.yellow("reason:"),
-    reason
-  );
-});
