@@ -217,10 +217,5 @@ We welcome contributions! Here's how you can help:
 <div align="center">
   Made with ❤️ by Raymond Ngobeni
   
-  [GitHub](https://github.com/Ubaton) | [Twitter](https://twitter.com/Ubaton) | [LinkedIn](https://linkedin.com/in/raymond-ngobeni)
+  [GitHub](https://github.com/Ubaton) | [Twitter](https://x.com/_GoldManRay) | [LinkedIn](https://www.linkedin.com/in/raymond-ngobeni-b7ab26163/)
 </div>
-```
-
-```
-
-```
