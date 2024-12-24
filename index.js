@@ -112,7 +112,7 @@ async function installDependencies(template, projectPath) {
       );
     }
 
-    return projectPath; // Return the actual path used
+    return projectPath;
   } catch (error) {
     console.error("❌ Error installing dependencies:", error);
     throw error;
