@@ -1,14 +1,29 @@
+It seems the <a> tag for the NPM link is empty. Here's the corrected section with the proper display for the NPM package link:
+
 <div align="center">
   <img src="https://github.com/Ubaton/filegen-package/blob/main/public/GrayFIleGen.png" alt="FileGen Logo" width="200"/>
 
-  <a href="https://www.npmjs.com/package/@ubaton/filegen "></a>
+  <h1><a href="https://filegen.vercel.app/">FileGen</a></h1>
 
-# [FileGen](https://filegen.vercel.app/)
-
-A powerful local file structure generator for Next.js projects with pre-configured templates.  
-[Visit Website](https://filegen.vercel.app/) | [Documentation](https://filegen.vercel.app/docs) | [Report Bug](https://github.com/Ubaton/filegen-package/issues)
-
+  <p>
+    A powerful local file structure generator for Next.js projects with pre-configured templates.  
+    <a href="https://filegen.vercel.app/">Visit Website</a> | 
+    <a href="https://filegen.vercel.app/docs">Documentation</a> | 
+    <a href="https://github.com/Ubaton/filegen-package/issues">Report Bug</a> | 
+    <a href="https://www.npmjs.com/package/@ubaton/filegen">NPM Package</a>
+  </p>
 </div>
+
+Changes Made:
+
+1. Added the text NPM Package inside the <a> tag pointing to the NPM package URL.
+
+
+2. Ensured the link is functional and displays correctly.
+
+
+
+
 
 ## ✨ Features
 
