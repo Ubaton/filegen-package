@@ -1,7 +1,7 @@
 <div align="center">
   <img src="https://github.com/Ubaton/filegen-package/blob/main/public/GrayFIleGen.png" alt="FileGen Logo" width="200"/>
 
-  <a href="https://www.npmjs.com/package/@ubaton/filegen "><img src="https://img.shields.io/npm/v/vite.svg" alt="npm package"></a>
+  <a href="https://www.npmjs.com/package/@ubaton/filegen "></a>
 
 # [FileGen](https://filegen.vercel.app/)
 
