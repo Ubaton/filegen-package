@@ -1,4 +1,4 @@
-It seems the <a> tag for the NPM link is empty. Here's the corrected section with the proper display for the NPM package link:
+
 
 <div align="center">
   <img src="https://github.com/Ubaton/filegen-package/blob/main/public/GrayFIleGen.png" alt="FileGen Logo" width="200"/>
