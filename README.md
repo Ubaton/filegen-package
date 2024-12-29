@@ -18,7 +18,7 @@
     <rect width="80" height="20" fill="#555"/>
     <rect x="35" width="45" height="20" fill="#007ec6"/>
     <text x="10" y="14" fill="#fff" font-family="Arial" font-size="11">npm</text>
-    <text x="42" y="14" fill="#fff" font-family="Arial" font-size="11">v2.0.2</text>
+    <text x="42" y="14" fill="#fff" font-family="Arial" font-size="11">v2.0.3</text>
   </g>
   
   <!-- node version badge -->
@@ -36,7 +36,6 @@
     <text x="10" y="14" fill="#fff" font-family="Arial" font-size="11">CLI</text>
     <text x="27" y="14" fill="#fff" font-family="Arial" font-size="11">✓</text>
   </g>
-
 
 ## ✨ Features
 
