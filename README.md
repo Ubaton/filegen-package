@@ -12,31 +12,6 @@
   </p>
 </div>
 
-<svg xmlns="http://www.w3.org/2000/svg" width="500" height="20">
-  <!-- npm version badge -->
-  <g transform="translate(0,0)">
-    <rect width="80" height="20" fill="#555"/>
-    <rect x="35" width="45" height="20" fill="#007ec6"/>
-    <text x="10" y="14" fill="#fff" font-family="Arial" font-size="11">npm</text>
-    <text x="42" y="14" fill="#fff" font-family="Arial" font-size="11">v2.0.3</text>
-  </g>
-  
-  <!-- node version badge -->
-  <g transform="translate(85,0)">
-    <rect width="180" height="20" fill="#555"/>
-    <rect x="40" width="140" height="20" fill="#97ca00"/>
-    <text x="10" y="14" fill="#fff" font-family="Arial" font-size="11">node</text>
-    <text x="45" y="14" fill="#fff" font-family="Arial" font-size="11">>16.0.0</text>
-  </g>
-  
-  <!-- CLI badge -->
-  <g transform="translate(270,0)">
-    <rect width="40" height="20" fill="#555"/>
-    <rect x="25" width="15" height="20" fill="#4c1"/>
-    <text x="10" y="14" fill="#fff" font-family="Arial" font-size="11">CLI</text>
-    <text x="27" y="14" fill="#fff" font-family="Arial" font-size="11">✓</text>
-  </g>
-
 ## ✨ Features
 
 - 🎯 Interactive CLI interface for easy template selection
