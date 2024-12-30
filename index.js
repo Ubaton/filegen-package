@@ -112,7 +112,7 @@ async function installDependencies(template, projectPath) {
       );
     }
 
-    return projectPath;
+    return { projectPath, packageManager };
   } catch (error) {
     console.error("❌ Error installing dependencies:", error);
     throw error;
@@ -167,11 +167,22 @@ program
     try {
       const template = options.template || (await promptTemplate());
       const projectPath = process.cwd();
-      await installDependencies(template, projectPath);
+      const { packageManager } = await installDependencies(
+        template,
+        projectPath
+      );
       await replaceSrcWithTemplate(template);
+
+      const startCommand = {
+        bunx: "bun run dev",
+        npx: "npm run dev",
+        yarn: "yarn dev",
+        pnpm: "pnpm dev",
+      }[packageManager];
+
       console.log(chalk.green.bold("\n🎉 Setup completed successfully!"));
       console.log(chalk.cyan.bold("\nNext steps:"));
-      console.log("1. Start development server:", chalk.yellow("bun dev"));
+      console.log("1. Start development server:", chalk.yellow(startCommand));
     } catch (error) {
       console.error(chalk.red.bold("❌ Error during setup:"), error);
       process.exit(1);
