@@ -1,4 +1,15 @@
+#Node Modules
 node_modules
 
+#Environment
 .env.*local
+
+#Configuration Files
 filebuilder.js
+tailwind.config.ts
+next.config.js
+postcss.config.js
+tsconfig.json
+
+#Floders
+/.next/
