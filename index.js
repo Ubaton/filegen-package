@@ -1,5 +1,22 @@
 #!/usr/bin/env node
 
+process.setUncaughtExceptionCaptureCallback((error) => {
+  console.error("\nUncaught Exception:", error);
+  process.exit(1);
+});
+
+// Handle unhandled promise rejections
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("\nUnhandled Promise Rejection:", reason);
+  process.exit(1);
+});
+
+// Handle uncaught exceptions
+process.on("uncaughtException", (error) => {
+  console.error("\nUncaught Exception:", error);
+  process.exit(1);
+});
+
 import { program } from "commander";
 import inquirer from "inquirer";
 import fs from "fs-extra";
@@ -15,43 +32,42 @@ import os from "os";
 import semver from "semver";
 
 const execPromise = promisify(exec);
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// Configuration management
-const CONFIG = {
+// Consolidated configuration
+const CONFIG = Object.freeze({
   FILE_NAME: ".filegenrc.json",
   PLUGINS_DIR: path.join(__dirname, "plugins"),
-  DEFAULT_FEATURES: ["responsive", "seo"],
-  DEFAULT_CI_TEMPLATES: ["github-actions", "gitlab-ci", "circle-ci"],
   TIMEOUT: 30000,
   MAX_RETRIES: 3,
-  CACHE_TTL: 3600000, // 1 hour in milliseconds
-};
+  CACHE_TTL: 3600000,
+  VERSION: "2.0.7",
+});
 
-Object.freeze(CONFIG); // Make configuration immutable
-
-// Simple caching system
-const cache = new Map();
-
-function setCache(key, value) {
-  cache.set(key, {
-    value,
-    timestamp: Date.now(),
-  });
-}
-
-function getCache(key) {
-  const item = cache.get(key);
-  if (!item) return null;
-  if (Date.now() - item.timestamp > CONFIG.CACHE_TTL) {
-    cache.delete(key);
-    return null;
+// Simple cache implementation
+class SimpleCache {
+  constructor() {
+    this.cache = new Map();
   }
-  return item.value;
+
+  set(key, value) {
+    this.cache.set(key, { value, timestamp: Date.now() });
+  }
+
+  get(key) {
+    const item = this.cache.get(key);
+    if (!item || Date.now() - item.timestamp > CONFIG.CACHE_TTL) {
+      this.cache.delete(key);
+      return null;
+    }
+    return item.value;
+  }
 }
 
-const AVAILABLE_TEMPLATES = [
+const cache = new SimpleCache();
+
+// Constants
+const TEMPLATES = [
   { name: "🛒 e-commerce store", value: "e-commerce" },
   { name: "✍️ blog platform", value: "blog-post" },
   { name: "💻 tech website", value: "tech-website" },
@@ -62,7 +78,7 @@ const AVAILABLE_TEMPLATES = [
   { name: "📰 news portal", value: "news" },
 ];
 
-const AVAILABLE_FEATURES = [
+const FEATURES = [
   { name: "Authentication", value: "authentication" },
   { name: "Dark Mode", value: "darkmode" },
   { name: "Internationalization (i18n)", value: "i18n" },
@@ -73,7 +89,7 @@ const AVAILABLE_FEATURES = [
   { name: "Accessibility", value: "a11y" },
 ];
 
-const AVAILABLE_PLUGINS = [
+const PLUGINS = [
   { name: "Analytics", value: "analytics" },
   { name: "SEO", value: "seo" },
   { name: "Performance Monitoring", value: "performance" },
@@ -81,14 +97,37 @@ const AVAILABLE_PLUGINS = [
   { name: "Database Connectors", value: "database" },
 ];
 
-// Enhanced error handling with logging
+const CI_PROVIDERS = ["github-actions", "gitlab-ci", "circle-ci"];
+
+// Enhanced error handling with better native error support
 class FileGenError extends Error {
   constructor(message, code = "GENERAL_ERROR", details = {}) {
     super(message);
     this.name = "FileGenError";
     this.code = code;
     this.details = details;
-    Error.captureStackTrace(this, FileGenError);
+
+    // Capture native errors
+    if (details.originalError && details.originalError instanceof Error) {
+      this.stack = details.originalError.stack;
+      this.cause = details.originalError;
+    } else {
+      Error.captureStackTrace(this, FileGenError);
+    }
+
+    // Add timestamp for better debugging
+    this.timestamp = new Date().toISOString();
+  }
+
+  toJSON() {
+    return {
+      name: this.name,
+      message: this.message,
+      code: this.code,
+      details: this.details,
+      timestamp: this.timestamp,
+      stack: this.stack,
+    };
   }
 }
 
@@ -107,9 +146,10 @@ function handleError(error, message = "An error occurred") {
     stack: error.stack,
   };
 
-  // Log to file
-  const logFile = path.join(process.cwd(), "filegen-error.log");
-  fs.appendFileSync(logFile, JSON.stringify(errorLog, null, 2) + "\n");
+  fs.appendFileSync(
+    path.join(process.cwd(), "filegen-error.log"),
+    JSON.stringify(errorLog, null, 2) + "\n"
+  );
 
   console.error(chalk.red.bold(`❌ ${message}`));
   if (error instanceof FileGenError) {
@@ -117,11 +157,10 @@ function handleError(error, message = "An error occurred") {
     console.error(chalk.red("Details:"), error.details);
   }
   console.error(chalk.dim(error.stack));
-
   process.exit(1);
 }
 
-// Enhanced command execution with retries and timeout
+// Utility functions
 async function runCommand(command, options = {}) {
   const {
     timeout = CONFIG.TIMEOUT,
@@ -129,30 +168,26 @@ async function runCommand(command, options = {}) {
     quiet = false,
   } = options;
 
-  let attempt = 0;
-
-  while (attempt < retries) {
+  for (let attempt = 0; attempt < retries; attempt++) {
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), timeout);
 
-      const { stdout, stderr } = await execPromise(command, {
+      const result = await execPromise(command, {
         stdio: quiet ? "pipe" : "inherit",
         signal: controller.signal,
       });
 
       clearTimeout(timeoutId);
-      return { stdout, stderr };
+      return result;
     } catch (error) {
-      attempt++;
-      if (attempt === retries) {
+      if (attempt === retries - 1) {
         throw new FileGenError(
           `Command failed after ${retries} attempts: ${command}`,
           "COMMAND_FAILED",
-          { command, attempt, error: error.message }
+          { command, attempt: attempt + 1, error: error.message }
         );
       }
-      // Exponential backoff
       await new Promise((resolve) =>
         setTimeout(resolve, Math.pow(2, attempt) * 1000)
       );
@@ -162,22 +197,16 @@ async function runCommand(command, options = {}) {
 
 async function createFileWithContent(filePath, content = "") {
   try {
-    // Create backup if file exists
     if (await fs.pathExists(filePath)) {
       const backupPath = `${filePath}.backup-${Date.now()}`;
       await fs.copy(filePath, backupPath);
       console.log(chalk.yellow(`Created backup: ${backupPath}`));
     }
 
-    // Ensure directory exists
-    const dir = path.dirname(filePath);
-    await fs.ensureDir(dir);
-
-    // Write file with atomic operation
+    await fs.ensureDir(path.dirname(filePath));
     const tempPath = `${filePath}.tmp`;
-    await fs.writeFile(tempPath, content || "");
+    await fs.writeFile(tempPath, content);
     await fs.rename(tempPath, filePath);
-
     console.log(chalk.blue.bold(`✔️ Created file: ${filePath}`));
   } catch (error) {
     throw new FileGenError(
@@ -188,13 +217,40 @@ async function createFileWithContent(filePath, content = "") {
   }
 }
 
-async function generateStructure(template, targetDir = process.cwd()) {
+async function promptUser(type, choices, message, defaultValue = null) {
+  const config = {
+    list: { type: "list", name: "result", message, choices, pageSize: 10 },
+    checkbox: {
+      type: "checkbox",
+      name: "result",
+      message,
+      choices,
+      default: defaultValue,
+    },
+    confirm: {
+      type: "confirm",
+      name: "result",
+      message,
+      default: defaultValue,
+    },
+  };
+
+  try {
+    const { result } = await inquirer.prompt(config[type]);
+    return result;
+  } catch (error) {
+    handleError(error, `Error during ${type} prompt`);
+  }
+}
+
+// Core functionality
+async function generateStructure(template, targetDir) {
   const structure = structures[template];
   if (!structure) {
     console.error(chalk.red.bold(`❌ Template "${template}" not found`));
     console.log(
       chalk.yellow("Available templates:"),
-      AVAILABLE_TEMPLATES.map((t) => t.name).join(", ")
+      TEMPLATES.map((t) => t.name).join(", ")
     );
     process.exit(1);
   }
@@ -202,12 +258,10 @@ async function generateStructure(template, targetDir = process.cwd()) {
   async function processStructure(struct, currentPath) {
     for (const [name, content] of Object.entries(struct)) {
       const fullPath = path.join(currentPath, name);
-      if (typeof content === "object") {
-        if (name.endsWith("/")) {
-          await fs.ensureDir(fullPath);
-          console.log(chalk.green.bold(`📁 Created directory: ${fullPath}`));
-          await processStructure(content, fullPath);
-        }
+      if (typeof content === "object" && name.endsWith("/")) {
+        await fs.ensureDir(fullPath);
+        console.log(chalk.green.bold(`📁 Created directory: ${fullPath}`));
+        await processStructure(content, fullPath);
       } else {
         await createFileWithContent(fullPath, content);
       }
@@ -224,38 +278,32 @@ async function generateStructure(template, targetDir = process.cwd()) {
 
 async function installDependencies(template, projectPath) {
   try {
-    // Check if directory exists and is not empty
+    let isNewDirectory = false;
     if (fs.existsSync(projectPath) && fs.readdirSync(projectPath).length > 0) {
       console.log("⚠️  Directory is not empty. Creating in a new directory...");
       projectPath = `${projectPath}-${Date.now()}`;
-    }
-    if (!fs.existsSync(projectPath)) {
-      fs.mkdirSync(projectPath, { recursive: true });
+      isNewDirectory = true;
     }
 
+    await fs.ensureDir(projectPath);
     const spinner = ora("Installing Next.js and Tailwind CSS...").start();
 
-    // Prompt user to choose package manager
-    const { packageManager } = await inquirer.prompt([
-      {
-        type: "list",
-        name: "packageManager",
-        message: "Choose a package manager to use:",
-        choices: ["bunx", "npx", "yarn", "pnpm"],
-      },
-    ]);
+    const packageManager = await promptUser(
+      "list",
+      ["bunx", "npx", "yarn", "pnpm"],
+      "Choose a package manager to use:"
+    );
 
-    const installCommand = {
+    const commands = {
       bunx: `bunx create-next-app@latest ${projectPath} --typescript --tailwind --eslint`,
       npx: `npx create-next-app@latest ${projectPath} --typescript --tailwind --eslint`,
       yarn: `yarn create next-app ${projectPath} --typescript --tailwind --eslint`,
       pnpm: `pnpm create next-app ${projectPath} --typescript --tailwind --eslint`,
     };
 
-    await runCommand(installCommand[packageManager]);
+    await runCommand(commands[packageManager]);
     spinner.succeed("Next.js and Tailwind CSS installed!");
 
-    // Example for additional dependencies for Blog Platform
     if (template === "blog-post") {
       const blogSpinner = ora(
         "Installing additional blog dependencies..."
@@ -266,105 +314,40 @@ async function installDependencies(template, projectPath) {
       blogSpinner.succeed("Additional blog dependencies installed!");
     }
 
-    return { projectPath, packageManager };
+    return { projectPath, packageManager, isNewDirectory };
   } catch (error) {
     handleError(error, "Error installing dependencies");
   }
 }
 
-async function replaceSrcWithTemplate(template) {
+async function replaceSrcWithTemplate(template, targetDir) {
   console.log(
-    chalk.cyan.bold("\nReplacing src directory with selected template...")
+    chalk.cyan.bold(
+      `\nReplacing src directory with selected template in ${targetDir}...`
+    )
   );
   try {
-    const srcPath = path.join(process.cwd(), "src");
+    const srcPath = path.join(targetDir, "src");
     await fs.remove(srcPath);
-    console.log(chalk.yellow.bold("✔️ Removed existing src directory."));
+    console.log(
+      chalk.yellow.bold(`✔️ Removed existing src directory in ${targetDir}.`)
+    );
 
-    const structure = structures[template];
-    if (!structure) {
-      throw new Error(`Template "${template}" not found in structures.`);
-    }
-    await generateStructure(template, process.cwd());
-    console.log(chalk.green.bold("✔️ src directory replaced successfully!"));
+    await generateStructure(template, targetDir);
+    console.log(
+      chalk.green.bold(
+        `✔️ src directory replaced successfully in ${targetDir}!`
+      )
+    );
   } catch (error) {
     handleError(error, "Error replacing src directory");
   }
 }
 
-async function promptTemplate() {
-  try {
-    const { template } = await inquirer.prompt([
-      {
-        type: "list",
-        name: "template",
-        message: "Select a template to generate:",
-        choices: AVAILABLE_TEMPLATES,
-        pageSize: 10,
-      },
-    ]);
-    return template;
-  } catch (error) {
-    handleError(error, "Error during template selection");
-  }
-}
-
-async function promptFeatures() {
-  try {
-    const { features } = await inquirer.prompt([
-      {
-        type: "checkbox",
-        name: "features",
-        message: "Select features to include:",
-        choices: AVAILABLE_FEATURES,
-        default: DEFAULT_FEATURES.map(
-          (f) => AVAILABLE_FEATURES.find((af) => af.value === f)?.value
-        ).filter(Boolean),
-      },
-    ]);
-    return features;
-  } catch (error) {
-    handleError(error, "Error during feature selection");
-  }
-}
-
-async function promptPlugins() {
-  try {
-    const { plugins } = await inquirer.prompt([
-      {
-        type: "checkbox",
-        name: "plugins",
-        message: "Select plugins to include:",
-        choices: AVAILABLE_PLUGINS,
-      },
-    ]);
-    return plugins;
-  } catch (error) {
-    handleError(error, "Error during plugin selection");
-  }
-}
-
-async function promptCIProvider() {
-  try {
-    const { ciProvider } = await inquirer.prompt([
-      {
-        type: "list",
-        name: "ciProvider",
-        message: "Select CI/CD provider:",
-        choices: DEFAULT_CI_TEMPLATES,
-      },
-    ]);
-    return ciProvider;
-  } catch (error) {
-    handleError(error, "Error during CI provider selection");
-  }
-}
-
-// Generate CI/CD configuration
-async function generateCIConfig(provider, targetDir = process.cwd()) {
-  const ciConfigs = {
-    "github-actions": {
-      ".github/workflows/main.yml": `name: CI/CD Pipeline
+// CI/CD Configuration
+const CI_CONFIGS = {
+  "github-actions": {
+    ".github/workflows/main.yml": `name: CI/CD Pipeline
 
 on:
   push:
@@ -394,11 +377,10 @@ jobs:
       run: npm run build
       
     - name: Test
-      run: npm test
-`,
-    },
-    "gitlab-ci": {
-      ".gitlab-ci.yml": `stages:
+      run: npm test`,
+  },
+  "gitlab-ci": {
+    ".gitlab-ci.yml": `stages:
   - build
   - test
   - deploy
@@ -427,11 +409,10 @@ deploy:
   script:
     - echo "Deploying application..."
   only:
-    - main
-`,
-    },
-    "circle-ci": {
-      ".circleci/config.yml": `version: 2.1
+    - main`,
+  },
+  "circle-ci": {
+    ".circleci/config.yml": `version: 2.1
 jobs:
   build:
     docker:
@@ -448,12 +429,6 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm test
-  deploy:
-    docker:
-      - image: cimg/node:18.0
-    steps:
-      - checkout
-      - run: echo "Deploying application..."
 
 workflows:
   version: 2
@@ -462,36 +437,27 @@ workflows:
       - build
       - test:
           requires:
-            - build
-      - deploy:
-          requires:
-            - test
-          filters:
-            branches:
-              only: main
-`,
-    },
-  };
+            - build`,
+  },
+};
 
+async function generateCIConfig(provider, targetDir) {
   try {
-    if (!ciConfigs[provider]) {
+    const config = CI_CONFIGS[provider];
+    if (!config) {
       console.error(chalk.red.bold(`❌ Unsupported CI provider: ${provider}`));
       console.log(
         chalk.yellow(
-          `Supported providers: ${Object.keys(ciConfigs).join(", ")}`
+          `Supported providers: ${Object.keys(CI_CONFIGS).join(", ")}`
         )
       );
       return false;
     }
 
-    // Create and write CI configuration files
-    for (const [filePath, content] of Object.entries(ciConfigs[provider])) {
+    for (const [filePath, content] of Object.entries(config)) {
       const fullPath = path.join(targetDir, filePath);
-      const dirPath = path.dirname(fullPath);
-
-      await fs.ensureDir(dirPath);
+      await fs.ensureDir(path.dirname(fullPath));
       await fs.writeFile(fullPath, content);
-
       console.log(chalk.blue.bold(`✅ Created CI config: ${filePath}`));
     }
 
@@ -502,109 +468,47 @@ workflows:
   }
 }
 
-// Import a template from a Git repository
-async function importTemplate(repoUrl) {
+// Configuration management
+async function loadOrCreateConfig(configPath) {
   try {
-    const spinner = ora(`Importing template from ${repoUrl}...`).start();
-    const repoName = repoUrl.split("/").pop().replace(".git", "");
-    const tempDir = path.join(
-      os.tmpdir(),
-      `filegen-import-${createHash("md5").update(repoUrl).digest("hex")}`
-    );
-
-    // Clone repository
-    await execPromise(`git clone ${repoUrl} ${tempDir}`);
-
-    // Check if it has a valid filegen template structure
-    const templateConfigPath = path.join(tempDir, "filegen-template.json");
-    if (!(await fs.pathExists(templateConfigPath))) {
-      spinner.fail(
-        "Invalid template repository: Missing filegen-template.json"
-      );
-      return false;
+    if (await fs.pathExists(configPath)) {
+      return await fs.readJson(configPath);
     }
-
-    // Copy template to templates directory
-    const templatesDir = path.join(__dirname, "templates");
-    await fs.ensureDir(templatesDir);
-
-    const targetDir = path.join(templatesDir, repoName);
-    await fs.copy(tempDir, targetDir);
-
-    // Clean up
-    await fs.remove(tempDir);
-
-    spinner.succeed(`Template imported successfully as "${repoName}"`);
-    return repoName;
+    const defaultConfig = {
+      version: "1.0.0",
+      template: null,
+      features: ["responsive", "seo"],
+      plugins: [],
+      lastUpdated: new Date().toISOString(),
+    };
+    await fs.writeJson(configPath, defaultConfig, { spaces: 2 });
+    return defaultConfig;
   } catch (error) {
-    handleError(error, "Error importing template");
-    return false;
+    handleError(error, "Error loading configuration");
   }
 }
 
-// Update project to latest template version
-async function updateProject(options = {}) {
+async function saveConfig(configPath, config) {
   try {
-    const configPath = path.join(process.cwd(), CONFIG_FILE_NAME);
-    if (!(await fs.pathExists(configPath))) {
-      console.error(
-        chalk.red.bold(
-          "❌ This doesn't appear to be a FileGen project. Configuration file not found."
-        )
-      );
-      return false;
-    }
-
-    const config = await loadOrCreateConfig(configPath);
-    const template = options.template || config.template;
-
-    if (!template) {
-      console.error(chalk.red.bold("❌ No template specified for update."));
-      return false;
-    }
-
-    console.log(
-      chalk.cyan.bold(`\n🔄 Updating project to latest ${template} template...`)
-    );
-
-    // Backup current files
-    const backupDir = `backup-${Date.now()}`;
-    await fs.copy(process.cwd(), path.join(process.cwd(), backupDir), {
-      filter: (src) => !src.includes("node_modules") && !src.includes(".git"),
-    });
-
-    console.log(chalk.yellow.bold(`📦 Created backup in ${backupDir}`));
-
-    // Update template
-    await replaceSrcWithTemplate(template);
-
-    // Update configuration
-    config.version = "2.0.0"; // Update version
     config.lastUpdated = new Date().toISOString();
-    await saveConfig(configPath, config);
-
-    console.log(chalk.green.bold("\n✅ Project updated successfully!"));
-    return true;
+    await fs.writeJson(configPath, config, { spaces: 2 });
+    console.log(chalk.green.bold("✅ Configuration saved successfully"));
   } catch (error) {
-    handleError(error, "Error updating project");
-    return false;
+    handleError(error, "Error saving configuration");
   }
 }
 
-// Check for outdated and deprecated dependencies
+// Dependency management
 async function checkDependencies(options = {}) {
   try {
     const cacheKey = "dependencies_check";
-    const cached = getCache(cacheKey);
-
+    const cached = cache.get(cacheKey);
     if (cached && !options.force) {
       console.log(chalk.cyan("Using cached dependency information..."));
       return cached;
     }
 
     const spinner = ora("Checking dependencies...").start();
-
-    // Get installed dependencies
     const packageJson = await fs.readJson(
       path.join(process.cwd(), "package.json")
     );
@@ -615,26 +519,19 @@ async function checkDependencies(options = {}) {
 
     let outdatedCount = 0;
     let deprecatedCount = 0;
-    let vulnerabilitiesCount = 0;
     const updates = [];
     const deprecated = [];
 
-    // Check each dependency
     for (const [name, version] of Object.entries(dependencies)) {
       try {
-        // Remove version prefix like ^ or ~
         const cleanVersion = version.replace(/^[\^~]/, "");
-
-        // Get the latest version from npm
         const { stdout } = await execPromise(
           `npm view ${name} version dist-tags.latest deprecated --json`
         );
         const info = JSON.parse(stdout);
-
         const latestVersion = info.distTags?.latest || info.version;
-        const isDeprecated = info.deprecated ? true : false;
 
-        if (isDeprecated) {
+        if (info.deprecated) {
           deprecatedCount++;
           deprecated.push({
             name,
@@ -653,7 +550,6 @@ async function checkDependencies(options = {}) {
           });
         }
       } catch (error) {
-        // Skip packages that can't be checked
         console.log(chalk.yellow(`Could not check ${name}: ${error.message}`));
       }
     }
@@ -669,15 +565,15 @@ async function checkDependencies(options = {}) {
 
     if (deprecated.length > 0) {
       console.log(chalk.red.bold("\n⚠️ Deprecated Packages:"));
-      for (const dep of deprecated) {
+      deprecated.forEach((dep) => {
         console.log(`- ${dep.name}@${dep.current}`);
         console.log(`  Message: ${dep.message}`);
-      }
+      });
     }
 
     if (updates.length > 0) {
       console.log(chalk.yellow.bold("\n🔄 Available Updates:"));
-      for (const update of updates) {
+      updates.forEach((update) => {
         const updateLevel =
           update.type === "major"
             ? chalk.red(update.type)
@@ -687,8 +583,9 @@ async function checkDependencies(options = {}) {
         console.log(
           `- ${update.name}: ${update.current} → ${update.latest} (${updateLevel})`
         );
-      }
+      });
     }
+
     const results = {
       total: Object.keys(dependencies).length,
       outdated: outdatedCount,
@@ -698,25 +595,20 @@ async function checkDependencies(options = {}) {
       lastChecked: new Date().toISOString(),
     };
 
-    // Cache the results
-    setCache("dependencies_check", results);
+    cache.set(cacheKey, results);
 
     if (options.fix && (outdatedCount > 0 || deprecatedCount > 0)) {
-      const { shouldFix } = await inquirer.prompt([
-        {
-          type: "confirm",
-          name: "shouldFix",
-          message: "Do you want to update the outdated dependencies?",
-          default: true,
-        },
-      ]);
+      const shouldFix = await promptUser(
+        "confirm",
+        null,
+        "Do you want to update the outdated dependencies?",
+        true
+      );
 
       if (shouldFix) {
         const fixSpinner = ora("Updating dependencies...").start();
         try {
-          // Use npm-check-updates to update package.json
           await execPromise("npx npm-check-updates -u");
-          // Install updated packages
           await execPromise("npm install");
           fixSpinner.succeed("Dependencies updated successfully!");
         } catch (error) {
@@ -726,343 +618,13 @@ async function checkDependencies(options = {}) {
       }
     }
 
-    return {
-      total: Object.keys(dependencies).length,
-      outdated: outdatedCount,
-      deprecated: deprecatedCount,
-      updates,
-      deprecated,
-    };
+    return results;
   } catch (error) {
     handleError(error, "Error checking dependencies");
   }
 }
 
-program
-  .version("2.0.0")
-  .description("Generate file structures from templates")
-  .option("-t, --template <template>", "Template name to generate")
-  .option("-f, --features <features>", "Comma-separated features to include")
-  .option("-p, --plugins <plugins>", "Comma-separated plugins to include")
-  .option("-c, --config <config>", "Path to configuration file")
-  .option("--ci <provider>", "CI/CD provider to configure")
-  .option("--skip-dep-check", "Skip checking for deprecated dependencies")
-  .action(async (options) => {
-    try {
-      // Check for deprecated dependencies first
-      if (!options.skipDepCheck) {
-        try {
-          const depResults = await checkDependencies({ fix: false });
-          if (depResults && depResults.deprecated > 0) {
-            console.log(
-              chalk.yellow(
-                "\n⚠️ Some dependencies are deprecated. Run 'filegen check-deps -f' to fix them."
-              )
-            );
-          }
-        } catch (error) {
-          console.log(
-            chalk.yellow(
-              "⚠️ Dependency check failed, continuing with template generation."
-            )
-          );
-        }
-      }
-
-      // Load configuration if provided
-      let config = {};
-      if (options.config) {
-        const configPath = path.resolve(process.cwd(), options.config);
-        if (await fs.pathExists(configPath)) {
-          config = await fs.readJson(configPath);
-          console.log(
-            chalk.cyan(`📄 Using configuration from: ${options.config}`)
-          );
-        } else {
-          console.log(
-            chalk.yellow(`⚠️ Configuration file not found: ${options.config}`)
-          );
-        }
-      }
-
-      // Get template - from options, config, or prompt
-      const template =
-        options.template || config.template || (await promptTemplate());
-
-      // Get features - from options, config, or prompt
-      const features = options.features
-        ? options.features.split(",")
-        : config.features || (await promptFeatures());
-
-      // Get plugins - from options, config, or prompt
-      const plugins = options.plugins
-        ? options.plugins.split(",")
-        : config.plugins || [];
-
-      // Install project dependencies
-      const projectPath = process.cwd();
-      const { packageManager } = await installDependencies(
-        template,
-        projectPath
-      );
-
-      // Apply selected template
-      await replaceSrcWithTemplate(template);
-
-      // Install selected plugins
-      if (plugins.length > 0) {
-        console.log(
-          chalk.cyan.bold(`\n📦 Installing plugins: ${plugins.join(", ")}...`)
-        );
-        for (const plugin of plugins) {
-          await installPlugin(plugin);
-        }
-      }
-
-      // Generate CI/CD configuration if requested
-      if (options.ci) {
-        console.log(
-          chalk.cyan.bold(`\n🚀 Configuring CI/CD with ${options.ci}...`)
-        );
-        await generateCIConfig(options.ci, projectPath);
-      }
-
-      // Save configuration for future updates
-      const configPath = path.join(projectPath, CONFIG_FILE_NAME);
-      await saveConfig(configPath, {
-        template,
-        features,
-        plugins,
-        version: "2.0.7",
-        lastUpdated: new Date().toISOString(),
-      });
-
-      const startCommand = {
-        bunx: "bun run dev",
-        npx: "npm run dev",
-        yarn: "yarn dev",
-        pnpm: "pnpm dev",
-      }[packageManager];
-
-      console.log(chalk.green.bold("\n🎉 Setup completed successfully!"));
-      console.log(chalk.cyan.bold("\nNext steps:"));
-      console.log("1. Start development server:", chalk.yellow(startCommand));
-    } catch (error) {
-      handleError(error, "Error during setup");
-    }
-  });
-
-// Command to init a new project with a configuration file
-program
-  .command("init")
-  .description("Initialize a new project with a configuration file")
-  .option("-t, --template <template>", "Template to use")
-  .option("-c, --config <config>", "Path to custom configuration file")
-  .action(async (options) => {
-    try {
-      const configPath = options.config
-        ? path.resolve(process.cwd(), options.config)
-        : path.join(process.cwd(), CONFIG_FILE_NAME);
-
-      const template = options.template || (await promptTemplate());
-      const features = await promptFeatures();
-      const plugins = await promptPlugins();
-
-      const config = {
-        template,
-        features,
-        plugins,
-        version: "2.0.0",
-        lastUpdated: new Date().toISOString(),
-      };
-
-      await saveConfig(configPath, config);
-
-      console.log(
-        chalk.green.bold(`✅ Project initialized with ${template} template`)
-      );
-      console.log(chalk.cyan.bold("\nNext steps:"));
-      console.log("1. Run the generator:", chalk.yellow("filegen"));
-    } catch (error) {
-      handleError(error, "Error initializing project");
-    }
-  });
-
-// Command to generate components
-program
-  .command("component <name>")
-  .description("Generate a new component")
-  .option("-p, --props <props>", "Comma-separated list of props")
-  .action(async (name, options) => {
-    try {
-      const props = options.props ? options.props.split(",") : [];
-      await generateComponent(name, props);
-    } catch (error) {
-      handleError(error, "Error generating component");
-    }
-  });
-
-// Command to generate API routes
-program
-  .command("api-routes <routes>")
-  .description("Generate API routes")
-  .action(async (routes) => {
-    try {
-      await generateApiRoutes(routes.split(","));
-    } catch (error) {
-      handleError(error, "Error generating API routes");
-    }
-  });
-
-// Command to generate database schema
-program
-  .command("db-schema")
-  .description("Generate database schema files")
-  .option("-t, --type <type>", "Database type (mongodb, prisma)", "mongodb")
-  .option("-o, --output <directory>", "Output directory", "./schemas")
-  .action(async (options) => {
-    try {
-      await generateDbSchema(options.type, options.output);
-    } catch (error) {
-      handleError(error, "Error generating database schema");
-    }
-  });
-
-// Command to install a plugin
-program
-  .command("install-plugin <plugin>")
-  .description("Install a plugin")
-  .action(async (plugin) => {
-    try {
-      await installPlugin(plugin);
-    } catch (error) {
-      handleError(error, "Error installing plugin");
-    }
-  });
-
-// Command to analyze project
-program
-  .command("analyze")
-  .description("Analyze project metrics")
-  .option("-p, --performance", "Include performance metrics")
-  .option("-b, --bundle-size", "Include bundle size analysis")
-  .action(async (options) => {
-    try {
-      await analyzeProject({
-        performance: options.performance,
-        bundleSize: options.bundleSize,
-      });
-    } catch (error) {
-      handleError(error, "Error analyzing project");
-    }
-  });
-
-// Command to update existing project
-program
-  .command("update")
-  .description("Update project to latest template version")
-  .option("-t, --template <template>", "Template to update to")
-  .action(async (options) => {
-    try {
-      await updateProject(options);
-    } catch (error) {
-      handleError(error, "Error updating project");
-    }
-  });
-
-// Command to import external template
-program
-  .command("import-template <url>")
-  .description("Import a template from a Git repository")
-  .action(async (url) => {
-    try {
-      const templateName = await importTemplate(url);
-      if (templateName) {
-        console.log(
-          chalk.green.bold(
-            `\n✅ Template '${templateName}' imported and ready to use`
-          )
-        );
-        console.log(chalk.cyan("To use this template:"));
-        console.log(chalk.yellow(`filegen --template ${templateName}`));
-      }
-    } catch (error) {
-      handleError(error, "Error importing template");
-    }
-  });
-
-// Command to check dependencies
-program
-  .command("check-deps")
-  .description("Check for outdated and deprecated dependencies")
-  .option("-f, --fix", "Automatically fix/update dependencies")
-  .action(async (options) => {
-    try {
-      await checkDependencies(options);
-    } catch (error) {
-      handleError(error, "Error checking dependencies");
-    }
-  });
-
-program.parse(process.argv);
-
-// Utility function to load or create project configuration
-async function loadOrCreateConfig(configPath) {
-  try {
-    if (await fs.pathExists(configPath)) {
-      return await fs.readJson(configPath);
-    }
-    const defaultConfig = {
-      version: "1.0.0",
-      template: null,
-      features: DEFAULT_FEATURES,
-      plugins: [],
-      lastUpdated: new Date().toISOString(),
-    };
-    await fs.writeJson(configPath, defaultConfig, { spaces: 2 });
-    return defaultConfig;
-  } catch (error) {
-    handleError(error, "Error loading configuration");
-  }
-}
-
-// Utility function to save configuration
-async function saveConfig(configPath, config) {
-  try {
-    config.lastUpdated = new Date().toISOString();
-    await fs.writeJson(configPath, config, { spaces: 2 });
-    console.log(chalk.green.bold("✅ Configuration saved successfully"));
-  } catch (error) {
-    handleError(error, "Error saving configuration");
-  }
-}
-
-// Plugin management
-async function installPlugin(pluginName) {
-  try {
-    const spinner = ora(`Installing plugin: ${pluginName}...`).start();
-
-    // Ensure plugins directory exists
-    await fs.ensureDir(PLUGINS_DIR);
-
-    // Check if plugin exists in npm registry
-    const npmPluginName = `@ubaton/filegen-plugin-${pluginName}`;
-    await execPromise(`npm view ${npmPluginName}`);
-
-    // Install plugin
-    await execPromise(`npm install ${npmPluginName} --save`);
-
-    spinner.succeed(`Plugin '${pluginName}' installed successfully!`);
-
-    return true;
-  } catch (error) {
-    console.error(chalk.red(`❌ Failed to install plugin: ${pluginName}`));
-    console.error(chalk.red(error.message));
-    return false;
-  }
-}
-
-// Generate component from template
+// Template generators
 async function generateComponent(
   componentName,
   props = [],
@@ -1072,16 +634,16 @@ async function generateComponent(
     const componentDir = path.join(targetDir, "components");
     await fs.ensureDir(componentDir);
 
-    const propsCode =
-      props.length > 0
-        ? `\n  ${props.map((prop) => `${prop}: any,`).join("\n  ")}`
-        : "";
-
     const propsInterface =
       props.length > 0
         ? `\ninterface ${componentName}Props {\n  ${props
             .map((prop) => `${prop}?: any;`)
             .join("\n  ")}\n}\n`
+        : "";
+
+    const propsCode =
+      props.length > 0
+        ? `\n  ${props.map((prop) => `${prop}: any,`).join("\n  ")}`
         : "";
 
     const componentTemplate = `import React from 'react';${propsInterface}
@@ -1093,8 +655,7 @@ export default function ${componentName}({${propsCode}
       {/* Add your component content here */}
     </div>
   );
-}
-`;
+}`;
 
     const componentPath = path.join(componentDir, `${componentName}.tsx`);
     await createFileWithContent(componentPath, componentTemplate);
@@ -1107,7 +668,6 @@ export default function ${componentName}({${propsCode}
   }
 }
 
-// Generate API routes
 async function generateApiRoutes(routes = [], targetDir = process.cwd()) {
   try {
     const apiDir = path.join(targetDir, "app/api");
@@ -1119,70 +679,35 @@ async function generateApiRoutes(routes = [], targetDir = process.cwd()) {
 
       const routeTemplate = `import { NextRequest, NextResponse } from 'next/server';
 
-export async function GET(request: NextRequest) {
-  try {
-    // Get ${route} logic here
-    return NextResponse.json({ 
-      message: '${route} fetched successfully',
-      data: [] 
-    });
-  } catch (error) {
-    return NextResponse.json(
-      { error: 'Failed to fetch ${route}' },
-      { status: 500 }
-    );
-  }
-}
-
-export async function POST(request: NextRequest) {
-  try {
+const methods = ['GET', 'POST', 'PUT', 'DELETE'];
+const responses = {
+  GET: () => NextResponse.json({ message: '${route} fetched successfully', data: [] }),
+  POST: async (request) => {
     const body = await request.json();
-    // Create ${route} logic here
-    
-    return NextResponse.json({ 
-      message: '${route} created successfully',
-      data: body 
-    });
-  } catch (error) {
-    return NextResponse.json(
-      { error: 'Failed to create ${route}' },
-      { status: 500 }
-    );
-  }
-}
-
-export async function PUT(request: NextRequest) {
-  try {
+    return NextResponse.json({ message: '${route} created successfully', data: body });
+  },
+  PUT: async (request) => {
     const body = await request.json();
-    // Update ${route} logic here
-    
-    return NextResponse.json({ 
-      message: '${route} updated successfully',
-      data: body 
-    });
-  } catch (error) {
-    return NextResponse.json(
-      { error: 'Failed to update ${route}' },
-      { status: 500 }
-    );
-  }
-}
+    return NextResponse.json({ message: '${route} updated successfully', data: body });
+  },
+  DELETE: () => NextResponse.json({ message: '${route} deleted successfully' })
+};
 
-export async function DELETE(request: NextRequest) {
+${methods
+  .map(
+    (method) => `
+export async function ${method}(request: NextRequest) {
   try {
-    // Delete ${route} logic here
-    
-    return NextResponse.json({ 
-      message: '${route} deleted successfully' 
-    });
+    return await responses.${method}(request);
   } catch (error) {
     return NextResponse.json(
-      { error: 'Failed to delete ${route}' },
+      { error: 'Failed to ${method.toLowerCase()} ${route}' },
       { status: 500 }
     );
   }
-}
-`;
+}`
+  )
+  .join("")}`;
 
       const routePath = path.join(routeDir, "route.ts");
       await createFileWithContent(routePath, routeTemplate);
@@ -1198,189 +723,186 @@ export async function DELETE(request: NextRequest) {
   }
 }
 
-// Generate database schema
-async function generateDbSchema(dbType, outputDir) {
+// Plugin management
+async function installPlugin(pluginName) {
   try {
-    await fs.ensureDir(outputDir);
+    const spinner = ora(`Installing plugin: ${pluginName}...`).start();
+    await fs.ensureDir(CONFIG.PLUGINS_DIR);
 
-    // Common schema templates
-    const schemas = {
-      mongodb: {
-        "User.js": `import mongoose from 'mongoose';
+    const npmPluginName = `@ubaton/filegen-plugin-${pluginName}`;
+    await execPromise(`npm view ${npmPluginName}`);
+    await execPromise(`npm install ${npmPluginName} --save`);
 
-const UserSchema = new mongoose.Schema({
-  name: { type: String, required: true },
-  email: { type: String, required: true, unique: true },
-  password: { type: String, required: true },
-  role: { type: String, enum: ['user', 'admin'], default: 'user' },
-  createdAt: { type: Date, default: Date.now },
-  updatedAt: { type: Date, default: Date.now }
-});
-
-const User = mongoose.models.User || mongoose.model('User', UserSchema);
-export default User;
-`,
-        "Product.js": `import mongoose from 'mongoose';
-
-const ProductSchema = new mongoose.Schema({
-  name: { type: String, required: true },
-  description: { type: String, required: true },
-  price: { type: Number, required: true },
-  image: { type: String },
-  category: { type: String },
-  inStock: { type: Boolean, default: true },
-  createdAt: { type: Date, default: Date.now },
-  updatedAt: { type: Date, default: Date.now }
-});
-
-const Product = mongoose.models.Product || mongoose.model('Product', ProductSchema);
-export default Product;
-`,
-      },
-      prisma: {
-        "schema.prisma": `generator client {
-  provider = "prisma-client-js"
+    spinner.succeed(`Plugin '${pluginName}' installed successfully!`);
+    return true;
+  } catch (error) {
+    console.error(chalk.red(`❌ Failed to install plugin: ${pluginName}`));
+    console.error(chalk.red(error.message));
+    return false;
+  }
 }
 
-datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
-}
+// Command definitions
+program
+  .version(CONFIG.VERSION)
+  .description("Generate file structures from templates")
+  .option("-t, --template <template>", "Template name to generate")
+  .option("-f, --features <features>", "Comma-separated features to include")
+  .option("-p, --plugins <plugins>", "Comma-separated plugins to include")
+  .option("-c, --config <config>", "Path to configuration file")
+  .option("--ci <provider>", "CI/CD provider to configure")
+  .option("--skip-dep-check", "Skip checking for deprecated dependencies")
+  .action(async (options) => {
+    try {
+      // Check dependencies unless skipped
+      if (!options.skipDepCheck) {
+        try {
+          const depResults = await checkDependencies({ fix: false });
+          if (depResults?.deprecated > 0) {
+            console.log(
+              chalk.yellow(
+                "\n⚠️ Some dependencies are deprecated. Run 'filegen check-deps -f' to fix them."
+              )
+            );
+          }
+        } catch (error) {
+          console.log(
+            chalk.yellow(
+              "⚠️ Dependency check failed, continuing with template generation."
+            )
+          );
+        }
+      }
 
-model User {
-  id        String   @id @default(cuid())
-  name      String
-  email     String   @unique
-  password  String
-  role      Role     @default(USER)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
+      // Load configuration
+      let config = {};
+      if (options.config) {
+        const configPath = path.resolve(process.cwd(), options.config);
+        if (await fs.pathExists(configPath)) {
+          config = await fs.readJson(configPath);
+          console.log(
+            chalk.cyan(`📄 Using configuration from: ${options.config}`)
+          );
+        }
+      }
 
-model Product {
-  id          String   @id @default(cuid())
-  name        String
-  description String
-  price       Float
-  image       String?
-  category    String?
-  inStock     Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-}
+      // Get template, features, and plugins
+      const template =
+        options.template ||
+        config.template ||
+        (await promptUser("list", TEMPLATES, "Select a template to generate:"));
 
-enum Role {
-  USER
-  ADMIN
-}
-`,
-      },
-    };
+      const features = options.features
+        ? options.features.split(",")
+        : config.features ||
+          (await promptUser(
+            "checkbox",
+            FEATURES,
+            "Select features to include:",
+            ["responsive", "seo"]
+          ));
 
-    // Write schema files
-    if (schemas[dbType]) {
-      for (const [fileName, content] of Object.entries(schemas[dbType])) {
-        const filePath = path.join(outputDir, fileName);
-        await createFileWithContent(filePath, content);
+      const plugins = options.plugins
+        ? options.plugins.split(",")
+        : config.plugins || [];
+
+      // Install dependencies and setup project
+      const initialProjectPath = process.cwd();
+      const {
+        projectPath: finalProjectPath,
+        packageManager,
+        isNewDirectory,
+      } = await installDependencies(template, initialProjectPath);
+
+      await replaceSrcWithTemplate(template, finalProjectPath);
+
+      // Install plugins if any
+      if (plugins.length > 0) {
+        console.log(
+          chalk.cyan.bold(`\n📦 Installing plugins: ${plugins.join(", ")}...`)
+        );
+        for (const plugin of plugins) {
+          await installPlugin(plugin);
+        }
+      }
+
+      // Generate CI/CD config if requested
+      if (options.ci) {
+        console.log(
+          chalk.cyan.bold(`\n🚀 Configuring CI/CD with ${options.ci}...`)
+        );
+        await generateCIConfig(options.ci, finalProjectPath);
+      }
+
+      // Save configuration
+      const configPath = path.join(finalProjectPath, CONFIG.FILE_NAME);
+      await saveConfig(configPath, {
+        template,
+        features,
+        plugins,
+        version: CONFIG.VERSION,
+        lastUpdated: new Date().toISOString(),
+      });
+
+      const startCommands = {
+        bunx: "bun run dev",
+        npx: "npm run dev",
+        yarn: "yarn dev",
+        pnpm: "pnpm dev",
+      };
+
+      console.log(chalk.green.bold("\n🎉 Setup completed successfully!"));
+      if (isNewDirectory) {
+        console.log(
+          chalk.cyan.bold(
+            `\nProject created in ${finalProjectPath}. Please cd into that directory to start the server.`
+          )
+        );
       }
       console.log(
-        chalk.green.bold(`✅ Generated ${dbType} schema in ${outputDir}`)
+        chalk.cyan.bold(`\n🚀 Starting the server with ${packageManager}...`)
       );
-    } else {
-      console.error(chalk.red.bold(`❌ Unsupported database type: ${dbType}`));
-      console.log(
-        chalk.yellow(`Supported types: ${Object.keys(schemas).join(", ")}`)
-      );
+      await execPromise(startCommands[packageManager]);
+    } catch (error) {
+      handleError(error, "Error during setup");
     }
-  } catch (error) {
-    handleError(error, "Error generating database schema");
-  }
-}
+  });
 
-// Project analysis
-async function analyzeProject(options = {}) {
-  try {
-    const spinner = ora("Analyzing project...").start();
-
-    const results = {
-      performance: options.performance ? await analyzePerformance() : null,
-      bundleSize: options.bundleSize ? await analyzeBundleSize() : null,
-      dependencies: await analyzeDependencies(),
-    };
-
-    spinner.succeed("Analysis complete!");
-
-    console.log(chalk.cyan.bold("\n📊 Project Analysis Results"));
-
-    if (results.dependencies) {
-      console.log(chalk.bold("\nDependencies:"));
-      console.log(`Total dependencies: ${results.dependencies.count}`);
-      console.log(`Outdated packages: ${results.dependencies.outdated}`);
+// Add additional commands
+program
+  .command("check-deps")
+  .description("Check for outdated and deprecated dependencies")
+  .option("-f, --fix", "Automatically fix/update dependencies")
+  .action(async (options) => {
+    try {
+      await checkDependencies(options);
+    } catch (error) {
+      handleError(error, "Error checking dependencies");
     }
+  });
 
-    if (results.performance) {
-      console.log(chalk.bold("\nPerformance:"));
-      console.log(`Build time: ${results.performance.buildTime}ms`);
-      console.log(`First load JS: ${results.performance.firstLoadJs}`);
+program
+  .command("component <name>")
+  .description("Generate a new component")
+  .option("-p, --props <props>", "Comma-separated list of props")
+  .action(async (name, options) => {
+    try {
+      const props = options.props ? options.props.split(",") : [];
+      await generateComponent(name, props);
+    } catch (error) {
+      handleError(error, "Error generating component");
     }
+  });
 
-    if (results.bundleSize) {
-      console.log(chalk.bold("\nBundle Size:"));
-      console.log(`Total size: ${results.bundleSize.total}`);
-      console.log(`JS size: ${results.bundleSize.js}`);
-      console.log(`CSS size: ${results.bundleSize.css}`);
+program
+  .command("api-routes <routes>")
+  .description("Generate API routes")
+  .action(async (routes) => {
+    try {
+      await generateApiRoutes(routes.split(","));
+    } catch (error) {
+      handleError(error, "Error generating API routes");
     }
+  });
 
-    return results;
-  } catch (error) {
-    handleError(error, "Error analyzing project");
-  }
-}
-
-// Helper functions for analysis
-async function analyzeDependencies() {
-  try {
-    const { stdout } = await execPromise("npm outdated --json");
-    const outdated = Object.keys(JSON.parse(stdout || "{}")).length;
-
-    const packageJson = await fs.readJson(
-      path.join(process.cwd(), "package.json")
-    );
-    const deps = {
-      ...(packageJson.dependencies || {}),
-      ...(packageJson.devDependencies || {}),
-    };
-
-    return {
-      count: Object.keys(deps).length,
-      outdated,
-    };
-  } catch (error) {
-    return { count: "Unknown", outdated: "Unknown" };
-  }
-}
-
-async function analyzePerformance() {
-  try {
-    // This would use a real performance measurement in a full implementation
-    return {
-      buildTime: "1200", // milliseconds
-      firstLoadJs: "76kB",
-    };
-  } catch (error) {
-    return null;
-  }
-}
-
-async function analyzeBundleSize() {
-  try {
-    // This would use a real bundle analyzer in a full implementation
-    return {
-      total: "120kB",
-      js: "85kB",
-      css: "35kB",
-    };
-  } catch (error) {
-    return null;
-  }
-}
+program.parse(process.argv);
