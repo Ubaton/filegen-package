@@ -1,12 +1,7 @@
 #!/usr/bin/env node
 
-process.setUncaughtExceptionCaptureCallback((error) => {
-  console.error("\nUncaught Exception:", error);
-  process.exit(1);
-});
-
 // Handle unhandled promise rejections
-process.on("unhandledRejection", (reason, promise) => {
+process.on("unhandledRejection", (reason) => {
   console.error("\nUnhandled Promise Rejection:", reason);
   process.exit(1);
 });
@@ -26,9 +21,7 @@ import { fileURLToPath } from "url";
 import { structures } from "./structures.js";
 import { exec } from "child_process";
 import ora from "ora";
-import { createHash } from "crypto";
 import { promisify } from "util";
-import os from "os";
 import semver from "semver";
 
 const execPromise = promisify(exec);
@@ -41,7 +34,7 @@ const CONFIG = Object.freeze({
   TIMEOUT: 30000,
   MAX_RETRIES: 3,
   CACHE_TTL: 3600000,
-  VERSION: "2.0.7",
+  VERSION: "2.0.9",
 });
 
 // Simple cache implementation
@@ -161,11 +154,20 @@ function handleError(error, message = "An error occurred") {
 }
 
 // Utility functions
+function quotePath(p) {
+  if (!p) return p;
+  // Wrap in double quotes and escape embedded quotes
+  const needsQuoting = /\s|[()&^%!]/.test(p);
+  const escaped = String(p).replace(/"/g, '\\"');
+  return needsQuoting ? `"${escaped}"` : escaped;
+}
+
 async function runCommand(command, options = {}) {
   const {
     timeout = CONFIG.TIMEOUT,
     retries = CONFIG.MAX_RETRIES,
     quiet = false,
+    cwd,
   } = options;
 
   for (let attempt = 0; attempt < retries; attempt++) {
@@ -174,8 +176,10 @@ async function runCommand(command, options = {}) {
       const timeoutId = setTimeout(() => controller.abort(), timeout);
 
       const result = await execPromise(command, {
-        stdio: quiet ? "pipe" : "inherit",
         signal: controller.signal,
+        cwd,
+        maxBuffer: 10 * 1024 * 1024, // 10MB to avoid stdout buffer overflow on scaffolding
+        windowsHide: true,
       });
 
       clearTimeout(timeoutId);
@@ -294,11 +298,12 @@ async function installDependencies(template, projectPath) {
       "Choose a package manager to use:"
     );
 
+    const qPath = quotePath(projectPath);
     const commands = {
-      bunx: `bunx create-next-app@latest ${projectPath} --typescript --tailwind --eslint`,
-      npx: `npx create-next-app@latest ${projectPath} --typescript --tailwind --eslint`,
-      yarn: `yarn create next-app ${projectPath} --typescript --tailwind --eslint`,
-      pnpm: `pnpm create next-app ${projectPath} --typescript --tailwind --eslint`,
+      bunx: `bunx create-next-app@latest ${qPath} --typescript --tailwind --eslint`,
+      npx: `npx create-next-app@latest ${qPath} --typescript --tailwind --eslint`,
+      yarn: `yarn create next-app ${qPath} --typescript --tailwind --eslint`,
+      pnpm: `pnpm create next-app ${qPath} --typescript --tailwind --eslint`,
     };
 
     await runCommand(commands[packageManager]);
@@ -309,7 +314,8 @@ async function installDependencies(template, projectPath) {
         "Installing additional blog dependencies..."
       ).start();
       await runCommand(
-        `cd ${projectPath} && npm install @prisma/client @trpc/client @trpc/server`
+        `npm install @prisma/client @trpc/client @trpc/server`,
+        { cwd: projectPath }
       );
       blogSpinner.succeed("Additional blog dependencies installed!");
     }
@@ -526,10 +532,12 @@ async function checkDependencies(options = {}) {
       try {
         const cleanVersion = version.replace(/^[\^~]/, "");
         const { stdout } = await execPromise(
-          `npm view ${name} version dist-tags.latest deprecated --json`
+          `npm view ${name} --json`
         );
         const info = JSON.parse(stdout);
-        const latestVersion = info.distTags?.latest || info.version;
+        const latestVersion =
+          (info && (info["dist-tags"]?.latest || info.version)) ||
+          (Array.isArray(info) ? info[0]?.version || info[0] : undefined);
 
         if (info.deprecated) {
           deprecatedCount++;
@@ -724,14 +732,14 @@ export async function ${method}(request: NextRequest) {
 }
 
 // Plugin management
-async function installPlugin(pluginName) {
+async function installPlugin(pluginName, targetDir) {
   try {
     const spinner = ora(`Installing plugin: ${pluginName}...`).start();
     await fs.ensureDir(CONFIG.PLUGINS_DIR);
 
     const npmPluginName = `@ubaton/filegen-plugin-${pluginName}`;
-    await execPromise(`npm view ${npmPluginName}`);
-    await execPromise(`npm install ${npmPluginName} --save`);
+    await runCommand(`npm view ${npmPluginName} --json`);
+    await runCommand(`npm install ${npmPluginName} --save`, { cwd: targetDir });
 
     spinner.succeed(`Plugin '${pluginName}' installed successfully!`);
     return true;
@@ -822,7 +830,7 @@ program
           chalk.cyan.bold(`\n📦 Installing plugins: ${plugins.join(", ")}...`)
         );
         for (const plugin of plugins) {
-          await installPlugin(plugin);
+          await installPlugin(plugin, finalProjectPath);
         }
       }
 
@@ -862,7 +870,7 @@ program
       console.log(
         chalk.cyan.bold(`\n🚀 Starting the server with ${packageManager}...`)
       );
-      await execPromise(startCommands[packageManager]);
+      await runCommand(startCommands[packageManager], { cwd: finalProjectPath });
     } catch (error) {
       handleError(error, "Error during setup");
     }
