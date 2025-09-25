@@ -34,7 +34,7 @@ const CONFIG = Object.freeze({
   TIMEOUT: 30000,
   MAX_RETRIES: 3,
   CACHE_TTL: 3600000,
-  VERSION: "2.0.9",
+  VERSION: "2.0.10",
 });
 
 // Simple cache implementation
