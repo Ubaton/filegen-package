@@ -185,6 +185,17 @@ function handleError(error, message = "An error occurred") {
 }
 
 /**
+ * Validate project/component names
+ * @param {string} name - Name to validate
+ * @returns {boolean} True if valid, false otherwise
+ */
+function isValidName(name) {
+  // Check for valid JavaScript/TypeScript identifier
+  const validNameRegex = /^[a-zA-Z_$][a-zA-Z0-9_$]*$/;
+  return validNameRegex.test(name);
+}
+
+/**
  * Quote a path if it contains special characters
  * @param {string} p - The path to quote
  * @returns {string} Quoted path if needed, original path otherwise
@@ -303,6 +314,11 @@ async function promptUser(type, choices, message, defaultValue = null) {
     const { result } = await inquirer.prompt(config[type]);
     return result;
   } catch (error) {
+    // Handle user interruption gracefully
+    if (error.isTtyError || error.name === "ExitPromptError") {
+      console.log(chalk.yellow("\n\n⚠️  Operation cancelled by user"));
+      process.exit(0);
+    }
     handleError(error, `Error during ${type} prompt`);
   }
 }
@@ -741,6 +757,19 @@ async function generateComponent(
   targetDir = process.cwd()
 ) {
   try {
+    // Validate component name
+    if (!isValidName(componentName)) {
+      console.error(
+        chalk.red.bold(
+          `❌ Invalid component name: "${componentName}". Must be a valid JavaScript identifier.`
+        )
+      );
+      console.log(
+        chalk.yellow("Example: MyComponent, UserProfile, NavBar")
+      );
+      process.exit(1);
+    }
+
     const componentDir = path.join(targetDir, "components");
     await fs.ensureDir(componentDir);
 

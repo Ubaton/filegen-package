@@ -33,16 +33,16 @@ You can install FileGen globally using any of these package managers:
 
 ```bash
 # Using npm
-npm install -g filegen
+npm install -g @ubaton/filegen
 
 # Using yarn
-yarn global add filegen
+yarn global add @ubaton/filegen
 
 # Using pnpm
-pnpm add -g filegen
+pnpm add -g @ubaton/filegen
 
 # Using bun
-bun add -g filegen
+bun add -g @ubaton/filegen
 ```
 
 ## 🚀 Usage
@@ -70,6 +70,25 @@ filegen --template <template-name>
 
 # Example
 filegen --template e-commerce
+```
+
+### Additional Commands
+
+```bash
+# Generate a component with props
+filegen component Header --props title,subtitle
+
+# Generate API routes
+filegen api-routes users,posts,comments
+
+# Setup CI/CD configuration
+filegen --template blog-post --ci github-actions
+
+# Check for outdated dependencies
+filegen check-deps
+
+# Auto-fix outdated dependencies
+filegen check-deps -f
 ```
 
 ## 📚 Available Templates
@@ -200,6 +219,79 @@ npm run dev
 yarn dev
 # or
 pnpm dev
+```
+
+## 🐛 Troubleshooting
+
+### Common Issues
+
+**Issue: Command not found after global installation**
+```bash
+# Try reinstalling globally
+npm install -g @ubaton/filegen
+
+# Or use npx to run without installing
+npx @ubaton/filegen
+```
+
+**Issue: Permission errors during installation**
+```bash
+# On macOS/Linux, use sudo
+sudo npm install -g @ubaton/filegen
+
+# Or configure npm to install packages globally without sudo
+npm config set prefix ~/.npm-global
+export PATH=~/.npm-global/bin:$PATH
+```
+
+**Issue: Template not found**
+```bash
+# Check available templates
+filegen --help
+
+# Valid templates: e-commerce, blog-post, tech-website, portfolio, saas, community, learning, news
+```
+
+**Issue: Dependency installation fails**
+```bash
+# Clear npm cache
+npm cache clean --force
+
+# Try with different package manager
+filegen --template your-template
+# Then select a different package manager when prompted
+```
+
+## 🔧 Advanced Usage
+
+### Using Configuration Files
+
+Create a `.filegenrc.json` in your project root:
+
+```json
+{
+  "template": "e-commerce",
+  "features": ["authentication", "darkmode", "seo"],
+  "plugins": ["analytics"],
+  "version": "2.0.10"
+}
+```
+
+Then run:
+```bash
+filegen --config .filegenrc.json
+```
+
+### Dependency Management
+
+Check for outdated packages:
+```bash
+filegen check-deps
+```
+
+Automatically update dependencies:
+```bash
+filegen check-deps -f
 ```
 
 ## 🤝 Contributing
