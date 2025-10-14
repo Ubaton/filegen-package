@@ -11,6 +11,9 @@ next.config.js
 postcss.config.js
 tsconfig.json
 
-#Floders
+#Folders
 /.next/
 index.html
+
+#Error Logs
+filegen-error.log

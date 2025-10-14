@@ -16,7 +16,6 @@
   "dependencies": {
     "chalk": "^5.4.1",
     "commander": "^11.1.0",
-    "consolidate": "^1.0.1",
     "fs-extra": "^11.3.0",
     "inquirer": "^9.3.7",
     "npm-check-updates": "^16.14.15",
@@ -24,7 +23,8 @@
     "semver": "^7.7.2"
   },
   "devDependencies": {
-    "depcheck": "^1.4.7"
+    "depcheck": "^1.4.7",
+    "eslint-config-next": "^15.5.5"
   },
   "author": "Raymond Ngobeni",
   "repository": {

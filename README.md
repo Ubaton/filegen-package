@@ -10,6 +10,21 @@
     <a href="https://github.com/Ubaton/filegen-package/issues">Report Bug</a> | 
     <a href="https://www.npmjs.com/package/@ubaton/filegen">NPM Package</a>
   </p>
+
+  <p>
+    <a href="https://www.npmjs.com/package/@ubaton/filegen">
+      <img src="https://img.shields.io/npm/v/@ubaton/filegen?color=blue" alt="npm version" />
+    </a>
+    <a href="https://www.npmjs.com/package/@ubaton/filegen">
+      <img src="https://img.shields.io/npm/dm/@ubaton/filegen" alt="npm downloads" />
+    </a>
+    <a href="https://github.com/Ubaton/filegen-package/blob/main/LICENSE">
+      <img src="https://img.shields.io/badge/license-MIT-green" alt="license" />
+    </a>
+    <a href="https://nodejs.org">
+      <img src="https://img.shields.io/badge/node-%3E%3D16.x-brightgreen" alt="node version" />
+    </a>
+  </p>
 </div>
 
 ## ✨ Features
@@ -33,16 +48,16 @@ You can install FileGen globally using any of these package managers:
 
 ```bash
 # Using npm
-npm install -g filegen
+npm install -g @ubaton/filegen
 
 # Using yarn
-yarn global add filegen
+yarn global add @ubaton/filegen
 
 # Using pnpm
-pnpm add -g filegen
+pnpm add -g @ubaton/filegen
 
 # Using bun
-bun add -g filegen
+bun add -g @ubaton/filegen
 ```
 
 ## 🚀 Usage
@@ -70,6 +85,25 @@ filegen --template <template-name>
 
 # Example
 filegen --template e-commerce
+```
+
+### Additional Commands
+
+```bash
+# Generate a component with props
+filegen component Header --props title,subtitle
+
+# Generate API routes
+filegen api-routes users,posts,comments
+
+# Setup CI/CD configuration
+filegen --template blog-post --ci github-actions
+
+# Check for outdated dependencies
+filegen check-deps
+
+# Auto-fix outdated dependencies
+filegen check-deps -f
 ```
 
 ## 📚 Available Templates
@@ -202,15 +236,98 @@ yarn dev
 pnpm dev
 ```
 
+## 🐛 Troubleshooting
+
+### Common Issues
+
+**Issue: Command not found after global installation**
+```bash
+# Try reinstalling globally
+npm install -g @ubaton/filegen
+
+# Or use npx to run without installing
+npx @ubaton/filegen
+```
+
+**Issue: Permission errors during installation**
+```bash
+# On macOS/Linux, use sudo
+sudo npm install -g @ubaton/filegen
+
+# Or configure npm to install packages globally without sudo
+npm config set prefix ~/.npm-global
+export PATH=~/.npm-global/bin:$PATH
+```
+
+**Issue: Template not found**
+```bash
+# Check available templates
+filegen --help
+
+# Valid templates: e-commerce, blog-post, tech-website, portfolio, saas, community, learning, news
+```
+
+**Issue: Dependency installation fails**
+```bash
+# Clear npm cache
+npm cache clean --force
+
+# Try with different package manager
+filegen --template your-template
+# Then select a different package manager when prompted
+```
+
+## 🔧 Advanced Usage
+
+### Using Configuration Files
+
+Create a `.filegenrc.json` in your project root:
+
+```json
+{
+  "template": "e-commerce",
+  "features": ["authentication", "darkmode", "seo"],
+  "plugins": ["analytics"],
+  "version": "2.0.10"
+}
+```
+
+Then run:
+```bash
+filegen --config .filegenrc.json
+```
+
+### Dependency Management
+
+Check for outdated packages:
+```bash
+filegen check-deps
+```
+
+Automatically update dependencies:
+```bash
+filegen check-deps -f
+```
+
 ## 🤝 Contributing
 
-We welcome contributions! Here's how you can help:
+We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details on:
+
+- Reporting bugs
+- Suggesting enhancements
+- Submitting pull requests
+- Code style guidelines
+- Development setup
+
+Quick start for contributors:
 
 1. Fork the repository
 2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
 3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
 4. Push to the branch (`git push origin feature/AmazingFeature`)
 5. Open a Pull Request
+
+See [CHANGELOG.md](CHANGELOG.md) for recent changes.
 
 ## 📝 License
 

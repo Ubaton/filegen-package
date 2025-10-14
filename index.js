@@ -37,16 +37,28 @@ const CONFIG = Object.freeze({
   VERSION: "2.0.10",
 });
 
-// Simple cache implementation
+/**
+ * Simple in-memory cache with TTL support
+ */
 class SimpleCache {
   constructor() {
     this.cache = new Map();
   }
 
+  /**
+   * Store a value in cache with current timestamp
+   * @param {string} key - Cache key
+   * @param {*} value - Value to cache
+   */
   set(key, value) {
     this.cache.set(key, { value, timestamp: Date.now() });
   }
 
+  /**
+   * Retrieve a value from cache if not expired
+   * @param {string} key - Cache key
+   * @returns {*} Cached value or null if expired/not found
+   */
   get(key) {
     const item = this.cache.get(key);
     if (!item || Date.now() - item.timestamp > CONFIG.CACHE_TTL) {
@@ -92,8 +104,18 @@ const PLUGINS = [
 
 const CI_PROVIDERS = ["github-actions", "gitlab-ci", "circle-ci"];
 
-// Enhanced error handling with better native error support
+/**
+ * Custom error class for FileGen operations with enhanced error tracking
+ * @extends Error
+ */
 class FileGenError extends Error {
+  /**
+   * Create a FileGenError
+   * @param {string} message - The error message
+   * @param {string} [code='GENERAL_ERROR'] - Error code for categorization
+   * @param {Object} [details={}] - Additional error details and context
+   * @param {Error} [details.originalError] - Original error if wrapping another error
+   */
   constructor(message, code = "GENERAL_ERROR", details = {}) {
     super(message);
     this.name = "FileGenError";
@@ -112,6 +134,10 @@ class FileGenError extends Error {
     this.timestamp = new Date().toISOString();
   }
 
+  /**
+   * Convert error to JSON format for logging
+   * @returns {Object} JSON representation of the error
+   */
   toJSON() {
     return {
       name: this.name,
@@ -124,6 +150,11 @@ class FileGenError extends Error {
   }
 }
 
+/**
+ * Handle and log errors with detailed information
+ * @param {Error|FileGenError} error - The error to handle
+ * @param {string} [message='An error occurred'] - User-friendly error message
+ */
 function handleError(error, message = "An error occurred") {
   const errorLog = {
     timestamp: new Date().toISOString(),
@@ -153,7 +184,22 @@ function handleError(error, message = "An error occurred") {
   process.exit(1);
 }
 
-// Utility functions
+/**
+ * Validate project/component names
+ * @param {string} name - Name to validate
+ * @returns {boolean} True if valid, false otherwise
+ */
+function isValidName(name) {
+  // Check for valid JavaScript/TypeScript identifier
+  const validNameRegex = /^[a-zA-Z_$][a-zA-Z0-9_$]*$/;
+  return validNameRegex.test(name);
+}
+
+/**
+ * Quote a path if it contains special characters
+ * @param {string} p - The path to quote
+ * @returns {string} Quoted path if needed, original path otherwise
+ */
 function quotePath(p) {
   if (!p) return p;
   // Wrap in double quotes and escape embedded quotes
@@ -162,6 +208,17 @@ function quotePath(p) {
   return needsQuoting ? `"${escaped}"` : escaped;
 }
 
+/**
+ * Execute a shell command with retry logic and timeout
+ * @param {string} command - The command to execute
+ * @param {Object} [options={}] - Execution options
+ * @param {number} [options.timeout=30000] - Command timeout in milliseconds
+ * @param {number} [options.retries=3] - Number of retry attempts
+ * @param {boolean} [options.quiet=false] - Suppress output
+ * @param {string} [options.cwd] - Working directory for command execution
+ * @returns {Promise<{stdout: string, stderr: string}>} Command output
+ * @throws {FileGenError} If command fails after all retries
+ */
 async function runCommand(command, options = {}) {
   const {
     timeout = CONFIG.TIMEOUT,
@@ -199,6 +256,12 @@ async function runCommand(command, options = {}) {
   }
 }
 
+/**
+ * Create a file with content, backing up existing files
+ * @param {string} filePath - Path to the file to create
+ * @param {string} [content=''] - Content to write to the file
+ * @throws {FileGenError} If file creation fails
+ */
 async function createFileWithContent(filePath, content = "") {
   try {
     if (await fs.pathExists(filePath)) {
@@ -221,6 +284,14 @@ async function createFileWithContent(filePath, content = "") {
   }
 }
 
+/**
+ * Prompt user for input using inquirer
+ * @param {string} type - Type of prompt (list, checkbox, confirm)
+ * @param {Array} choices - Available choices for list/checkbox prompts
+ * @param {string} message - Prompt message to display
+ * @param {*} [defaultValue=null] - Default value for the prompt
+ * @returns {Promise<*>} User's selection or input
+ */
 async function promptUser(type, choices, message, defaultValue = null) {
   const config = {
     list: { type: "list", name: "result", message, choices, pageSize: 10 },
@@ -243,11 +314,21 @@ async function promptUser(type, choices, message, defaultValue = null) {
     const { result } = await inquirer.prompt(config[type]);
     return result;
   } catch (error) {
+    // Handle user interruption gracefully
+    if (error.isTtyError || error.name === "ExitPromptError") {
+      console.log(chalk.yellow("\n\n⚠️  Operation cancelled by user"));
+      process.exit(0);
+    }
     handleError(error, `Error during ${type} prompt`);
   }
 }
 
-// Core functionality
+/**
+ * Generate project structure from template
+ * @param {string} template - Template name to generate
+ * @param {string} targetDir - Target directory for generation
+ * @throws {Error} If template is not found or generation fails
+ */
 async function generateStructure(template, targetDir) {
   const structure = structures[template];
   if (!structure) {
@@ -280,6 +361,12 @@ async function generateStructure(template, targetDir) {
   }
 }
 
+/**
+ * Install project dependencies using selected package manager
+ * @param {string} template - Template name for specialized dependencies
+ * @param {string} projectPath - Path where project will be created
+ * @returns {Promise<{projectPath: string, packageManager: string, isNewDirectory: boolean}>} Installation result
+ */
 async function installDependencies(template, projectPath) {
   try {
     let isNewDirectory = false;
@@ -326,6 +413,11 @@ async function installDependencies(template, projectPath) {
   }
 }
 
+/**
+ * Replace src directory with template-specific structure
+ * @param {string} template - Template name to use
+ * @param {string} targetDir - Target directory containing src folder
+ */
 async function replaceSrcWithTemplate(template, targetDir) {
   console.log(
     chalk.cyan.bold(
@@ -447,6 +539,12 @@ workflows:
   },
 };
 
+/**
+ * Generate CI/CD configuration files for specified provider
+ * @param {string} provider - CI/CD provider name (github-actions, gitlab-ci, circle-ci)
+ * @param {string} targetDir - Target directory for config files
+ * @returns {Promise<boolean>} True if successful, false otherwise
+ */
 async function generateCIConfig(provider, targetDir) {
   try {
     const config = CI_CONFIGS[provider];
@@ -474,7 +572,11 @@ async function generateCIConfig(provider, targetDir) {
   }
 }
 
-// Configuration management
+/**
+ * Load existing configuration or create a new one with defaults
+ * @param {string} configPath - Path to configuration file
+ * @returns {Promise<Object>} Configuration object
+ */
 async function loadOrCreateConfig(configPath) {
   try {
     if (await fs.pathExists(configPath)) {
@@ -494,6 +596,11 @@ async function loadOrCreateConfig(configPath) {
   }
 }
 
+/**
+ * Save configuration to file with timestamp
+ * @param {string} configPath - Path to save configuration
+ * @param {Object} config - Configuration object to save
+ */
 async function saveConfig(configPath, config) {
   try {
     config.lastUpdated = new Date().toISOString();
@@ -504,7 +611,13 @@ async function saveConfig(configPath, config) {
   }
 }
 
-// Dependency management
+/**
+ * Check project dependencies for outdated and deprecated packages
+ * @param {Object} [options={}] - Check options
+ * @param {boolean} [options.force=false] - Force check, bypass cache
+ * @param {boolean} [options.fix=false] - Automatically update outdated packages
+ * @returns {Promise<Object>} Dependency analysis results
+ */
 async function checkDependencies(options = {}) {
   try {
     const cacheKey = "dependencies_check";
@@ -632,13 +745,31 @@ async function checkDependencies(options = {}) {
   }
 }
 
-// Template generators
+/**
+ * Generate a React component with TypeScript
+ * @param {string} componentName - Name of the component to generate
+ * @param {string[]} [props=[]] - Array of prop names for the component
+ * @param {string} [targetDir=process.cwd()] - Target directory for component
+ */
 async function generateComponent(
   componentName,
   props = [],
   targetDir = process.cwd()
 ) {
   try {
+    // Validate component name
+    if (!isValidName(componentName)) {
+      console.error(
+        chalk.red.bold(
+          `❌ Invalid component name: "${componentName}". Must be a valid JavaScript identifier.`
+        )
+      );
+      console.log(
+        chalk.yellow("Example: MyComponent, UserProfile, NavBar")
+      );
+      process.exit(1);
+    }
+
     const componentDir = path.join(targetDir, "components");
     await fs.ensureDir(componentDir);
 
@@ -676,6 +807,11 @@ export default function ${componentName}({${propsCode}
   }
 }
 
+/**
+ * Generate Next.js API routes with CRUD operations
+ * @param {string[]} [routes=[]] - Array of route names to generate
+ * @param {string} [targetDir=process.cwd()] - Target directory for API routes
+ */
 async function generateApiRoutes(routes = [], targetDir = process.cwd()) {
   try {
     const apiDir = path.join(targetDir, "app/api");
@@ -731,7 +867,12 @@ export async function ${method}(request: NextRequest) {
   }
 }
 
-// Plugin management
+/**
+ * Install a FileGen plugin from npm
+ * @param {string} pluginName - Name of the plugin to install
+ * @param {string} targetDir - Target directory for plugin installation
+ * @returns {Promise<boolean>} True if successful, false otherwise
+ */
 async function installPlugin(pluginName, targetDir) {
   try {
     const spinner = ora(`Installing plugin: ${pluginName}...`).start();
@@ -799,6 +940,17 @@ program
         options.template ||
         config.template ||
         (await promptUser("list", TEMPLATES, "Select a template to generate:"));
+
+      // Validate template
+      const validTemplates = TEMPLATES.map((t) => t.value);
+      if (!validTemplates.includes(template)) {
+        console.error(
+          chalk.red.bold(
+            `❌ Invalid template: "${template}". Available templates: ${validTemplates.join(", ")}`
+          )
+        );
+        process.exit(1);
+      }
 
       const features = options.features
         ? options.features.split(",")
