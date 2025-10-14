@@ -10,6 +10,21 @@
     <a href="https://github.com/Ubaton/filegen-package/issues">Report Bug</a> | 
     <a href="https://www.npmjs.com/package/@ubaton/filegen">NPM Package</a>
   </p>
+
+  <p>
+    <a href="https://www.npmjs.com/package/@ubaton/filegen">
+      <img src="https://img.shields.io/npm/v/@ubaton/filegen?color=blue" alt="npm version" />
+    </a>
+    <a href="https://www.npmjs.com/package/@ubaton/filegen">
+      <img src="https://img.shields.io/npm/dm/@ubaton/filegen" alt="npm downloads" />
+    </a>
+    <a href="https://github.com/Ubaton/filegen-package/blob/main/LICENSE">
+      <img src="https://img.shields.io/badge/license-MIT-green" alt="license" />
+    </a>
+    <a href="https://nodejs.org">
+      <img src="https://img.shields.io/badge/node-%3E%3D16.x-brightgreen" alt="node version" />
+    </a>
+  </p>
 </div>
 
 ## ✨ Features
@@ -296,13 +311,23 @@ filegen check-deps -f
 
 ## 🤝 Contributing
 
-We welcome contributions! Here's how you can help:
+We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details on:
+
+- Reporting bugs
+- Suggesting enhancements
+- Submitting pull requests
+- Code style guidelines
+- Development setup
+
+Quick start for contributors:
 
 1. Fork the repository
 2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
 3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
 4. Push to the branch (`git push origin feature/AmazingFeature`)
 5. Open a Pull Request
+
+See [CHANGELOG.md](CHANGELOG.md) for recent changes.
 
 ## 📝 License
 
