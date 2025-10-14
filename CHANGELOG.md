@@ -14,7 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Component name validation against JavaScript identifier rules
 - Troubleshooting section in README
 - Advanced usage documentation
-- eslint-config-next as dev dependency
+- CHANGELOG.md for version tracking
+- CONTRIBUTING.md with contributor guidelines
+- README badges for npm version, downloads, license, and node requirement
+- eslint-config-next as dev dependency (required by .eslintrc.json, was missing)
 
 ### Fixed
 - Security vulnerabilities in inquirer dependency chain (3 low-severity issues)
