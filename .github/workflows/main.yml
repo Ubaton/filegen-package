@@ -7,6 +7,8 @@ on:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
       
@@ -25,6 +27,22 @@ jobs:
         
       - name: Run tests
         run: npm test --if-present
+
+      - name: Verify NPM auth and scope access
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "$NODE_AUTH_TOKEN" ]; then
+            echo "NPM_TOKEN secret is missing. Add a valid npm automation token in GitHub Actions secrets."
+            exit 1
+          fi
+          npm_user=$(npm whoami)
+          echo "Authenticated as: $npm_user"
+          npm access ls-packages "$npm_user" || true
+          npm view @ubaton/filegen version || echo "Package may not exist yet; first publish still requires @ubaton scope publish permission."
+
+      - name: Validate package metadata
+        run: npm pkg get name version
         
       - name: Publish to NPM
         run: npm publish --access public
