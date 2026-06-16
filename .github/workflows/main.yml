@@ -1,5 +1,6 @@
 name: Publish to NPM
 on:
+  workflow_dispatch:
   push:
     tags:
       - 'v*'
@@ -36,7 +37,16 @@ jobs:
             echo "NPM_TOKEN secret is missing. Add a valid npm automation token in GitHub Actions secrets."
             exit 1
           fi
-          npm_user=$(npm whoami)
+
+          echo "Validating npm authentication token..."
+          if ! npm_user=$(npm whoami 2>/tmp/npm_whoami_err.log); then
+            echo "NPM authentication failed (E401 Unauthorized)."
+            echo "Update GitHub secret NPM_TOKEN with a valid npm Automation token from the account that can publish @ubaton packages."
+            echo "Common causes: expired token, revoked token, or token from a different npm account."
+            cat /tmp/npm_whoami_err.log
+            exit 1
+          fi
+
           echo "Authenticated as: $npm_user"
           npm access ls-packages "$npm_user" || true
           npm view @ubaton/filegen version || echo "Package may not exist yet; first publish still requires @ubaton scope publish permission."
