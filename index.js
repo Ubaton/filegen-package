@@ -18,11 +18,12 @@ import fs from "fs-extra";
 import chalk from "chalk";
 import path from "path";
 import { fileURLToPath } from "url";
-import { structures } from "./structures.js";
+import { getStructure } from "./structures.js";
 import { exec } from "child_process";
 import ora from "ora";
 import { promisify } from "util";
 import semver from "semver";
+import os from "os";
 
 const execPromise = promisify(exec);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -33,11 +34,40 @@ const CONFIG = Object.freeze({
   PLUGINS_DIR: path.join(__dirname, "plugins"),
   TIMEOUT: 30000,
   MAX_RETRIES: 3,
-  CACHE_TTL: 3600000,
-  VERSION: "2.0.10",
+  CACHE_TTL: 300000, // 5 minutes — refresh more often than the old 1-hour TTL
+  VERSION: "2.0.11",
+  // Cap concurrent filesystem/network ops so we don't exhaust FDs on big
+  // structures or large dependency trees, but still run far faster than
+  // sequential execution.
+  CONCURRENCY: Math.max(4, Math.min(16, os.cpus().length * 2)),
 });
 
-// Simple cache implementation
+// ---------------------------------------------------------------------------
+// Small concurrency-limited mapper (no extra dependency needed for a simple
+// p-limit substitute). Runs `worker` over `items` with at most `limit` in
+// flight at once and returns results in input order.
+// ---------------------------------------------------------------------------
+async function mapLimit(items, limit, worker) {
+  const results = new Array(items.length);
+  let nextIndex = 0;
+
+  async function run() {
+    while (true) {
+      const current = nextIndex++;
+      if (current >= items.length) return;
+      results[current] = await worker(items[current], current);
+    }
+  }
+
+  const runners = Array.from(
+    { length: Math.min(limit, items.length) },
+    run
+  );
+  await Promise.all(runners);
+  return results;
+}
+
+// Simple cache implementation (with lazy sweep instead of unbounded growth)
 class SimpleCache {
   constructor() {
     this.cache = new Map();
@@ -49,7 +79,8 @@ class SimpleCache {
 
   get(key) {
     const item = this.cache.get(key);
-    if (!item || Date.now() - item.timestamp > CONFIG.CACHE_TTL) {
+    if (!item) return null;
+    if (Date.now() - item.timestamp > CONFIG.CACHE_TTL) {
       this.cache.delete(key);
       return null;
     }
@@ -124,6 +155,30 @@ class FileGenError extends Error {
   }
 }
 
+// Buffer error log writes so a generation run with many failures doesn't
+// do a synchronous disk write per error.
+let errorLogBuffer = [];
+let errorLogFlushScheduled = false;
+
+function scheduleErrorLogFlush() {
+  if (errorLogFlushScheduled) return;
+  errorLogFlushScheduled = true;
+  setImmediate(async () => {
+    const chunk = errorLogBuffer.join("");
+    errorLogBuffer = [];
+    errorLogFlushScheduled = false;
+    if (!chunk) return;
+    try {
+      await fs.appendFile(
+        path.join(process.cwd(), "filegen-error.log"),
+        chunk
+      );
+    } catch {
+      // Best-effort logging; never let logging crash the process.
+    }
+  });
+}
+
 function handleError(error, message = "An error occurred") {
   const errorLog = {
     timestamp: new Date().toISOString(),
@@ -139,10 +194,8 @@ function handleError(error, message = "An error occurred") {
     stack: error.stack,
   };
 
-  fs.appendFileSync(
-    path.join(process.cwd(), "filegen-error.log"),
-    JSON.stringify(errorLog, null, 2) + "\n"
-  );
+  errorLogBuffer.push(JSON.stringify(errorLog, null, 2) + "\n");
+  scheduleErrorLogFlush();
 
   console.error(chalk.red.bold(`❌ ${message}`));
   if (error instanceof FileGenError) {
@@ -150,7 +203,9 @@ function handleError(error, message = "An error occurred") {
     console.error(chalk.red("Details:"), error.details);
   }
   console.error(chalk.dim(error.stack));
-  process.exit(1);
+  process.exitCode = 1;
+  // Give the scheduled flush a tick to run before exiting.
+  setImmediate(() => process.exit(1));
 }
 
 // Utility functions
@@ -170,46 +225,66 @@ async function runCommand(command, options = {}) {
     cwd,
   } = options;
 
+  let lastError;
   for (let attempt = 0; attempt < retries; attempt++) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), timeout);
-
       const result = await execPromise(command, {
         signal: controller.signal,
         cwd,
         maxBuffer: 10 * 1024 * 1024, // 10MB to avoid stdout buffer overflow on scaffolding
         windowsHide: true,
       });
-
-      clearTimeout(timeoutId);
       return result;
     } catch (error) {
-      if (attempt === retries - 1) {
+      lastError = error;
+      // Only retry on transient network/timeout failures; fail fast on hard
+      // errors (bad command, missing binary, permission denied, etc.).
+      const TRANSIENT = ["ETIMEDOUT", "ECONNREFUSED", "ERR_HTTP_REQUEST_TIMEOUT", "ENOTFOUND"];
+      const isTransient = TRANSIENT.includes(error.code) || error.name === "AbortError";
+      if (attempt === retries - 1 || !isTransient) {
         throw new FileGenError(
-          `Command failed after ${retries} attempts: ${command}`,
+          `Command failed after ${attempt + 1} attempt(s): ${command}`,
           "COMMAND_FAILED",
           { command, attempt: attempt + 1, error: error.message }
         );
       }
-      await new Promise((resolve) =>
-        setTimeout(resolve, Math.pow(2, attempt) * 1000)
-      );
+      // Exponential backoff with jitter, capped to keep retries snappy.
+      const backoff = Math.min(2 ** attempt * 500, 4000);
+      const jitter = Math.random() * 250;
+      await new Promise((resolve) => setTimeout(resolve, backoff + jitter));
+    } finally {
+      clearTimeout(timeoutId);
     }
   }
+  throw lastError;
 }
 
 async function createFileWithContent(filePath, content = "") {
   try {
-    if (await fs.pathExists(filePath)) {
-      const backupPath = `${filePath}.backup-${Date.now()}`;
-      await fs.copy(filePath, backupPath);
-      console.log(chalk.yellow(`Created backup: ${backupPath}`));
+    await fs.ensureDir(path.dirname(filePath));
+
+    // Backup + write concurrently rather than sequentially blocking on the
+    // backup before we even start writing the temp file.
+    const backupPromise = fs
+      .pathExists(filePath)
+      .then((exists) =>
+        exists
+          ? fs
+              .copy(filePath, `${filePath}.backup-${Date.now()}`)
+              .then(() => true)
+          : false
+      );
+
+    const tempPath = `${filePath}.tmp-${process.pid}-${Date.now()}`;
+    await fs.writeFile(tempPath, content);
+
+    const didBackup = await backupPromise;
+    if (didBackup) {
+      console.log(chalk.yellow(`Created backup for: ${filePath}`));
     }
 
-    await fs.ensureDir(path.dirname(filePath));
-    const tempPath = `${filePath}.tmp`;
-    await fs.writeFile(tempPath, content);
     await fs.rename(tempPath, filePath);
     console.log(chalk.blue.bold(`✔️ Created file: ${filePath}`));
   } catch (error) {
@@ -249,7 +324,7 @@ async function promptUser(type, choices, message, defaultValue = null) {
 
 // Core functionality
 async function generateStructure(template, targetDir) {
-  const structure = structures[template];
+  const structure = await getStructure(template);
   if (!structure) {
     console.error(chalk.red.bold(`❌ Template "${template}" not found`));
     console.log(
@@ -259,22 +334,42 @@ async function generateStructure(template, targetDir) {
     process.exit(1);
   }
 
-  async function processStructure(struct, currentPath) {
+  // Flatten the nested structure into a job list of
+  // { type: 'dir'|'file', fullPath, content } so directory creation and
+  // file writes can be parallelized with mapLimit instead of awaiting each
+  // entry one by one through recursion.
+  function flatten(struct, currentPath, jobs) {
     for (const [name, content] of Object.entries(struct)) {
       const fullPath = path.join(currentPath, name);
       if (typeof content === "object" && name.endsWith("/")) {
-        await fs.ensureDir(fullPath);
-        console.log(chalk.green.bold(`📁 Created directory: ${fullPath}`));
-        await processStructure(content, fullPath);
+        jobs.push({ type: "dir", fullPath });
+        flatten(content, fullPath, jobs);
       } else {
-        await createFileWithContent(fullPath, content);
+        jobs.push({ type: "file", fullPath, content });
       }
     }
+    return jobs;
   }
 
   try {
     console.log(chalk.cyan.bold(`\n🚧 Generating ${template} structure...\n`));
-    await processStructure(structure, targetDir);
+    const jobs = flatten(structure, targetDir, []);
+
+    // Directories must exist before files land in them, but directories
+    // among themselves (and files among themselves) are independent, so
+    // do dirs first (parallel), then files (parallel). ensureDir is also
+    // idempotent/recursive so this is safe even with nested paths.
+    const dirJobs = jobs.filter((j) => j.type === "dir");
+    const fileJobs = jobs.filter((j) => j.type === "file");
+
+    await mapLimit(dirJobs, CONFIG.CONCURRENCY, async (job) => {
+      await fs.ensureDir(job.fullPath);
+      console.log(chalk.green.bold(`📁 Created directory: ${job.fullPath}`));
+    });
+
+    await mapLimit(fileJobs, CONFIG.CONCURRENCY, (job) =>
+      createFileWithContent(job.fullPath, job.content)
+    );
   } catch (error) {
     handleError(error, "Error generating structure");
   }
@@ -460,12 +555,16 @@ async function generateCIConfig(provider, targetDir) {
       return false;
     }
 
-    for (const [filePath, content] of Object.entries(config)) {
-      const fullPath = path.join(targetDir, filePath);
-      await fs.ensureDir(path.dirname(fullPath));
-      await fs.writeFile(fullPath, content);
-      console.log(chalk.blue.bold(`✅ Created CI config: ${filePath}`));
-    }
+    await mapLimit(
+      Object.entries(config),
+      CONFIG.CONCURRENCY,
+      async ([filePath, content]) => {
+        const fullPath = path.join(targetDir, filePath);
+        await fs.ensureDir(path.dirname(fullPath));
+        await fs.writeFile(fullPath, content);
+        console.log(chalk.blue.bold(`✅ Created CI config: ${filePath}`));
+      }
+    );
 
     return true;
   } catch (error) {
@@ -523,24 +622,24 @@ async function checkDependencies(options = {}) {
       ...(packageJson.devDependencies || {}),
     };
 
-    let outdatedCount = 0;
-    let deprecatedCount = 0;
     const updates = [];
     const deprecated = [];
 
-    for (const [name, version] of Object.entries(dependencies)) {
+    // The original implementation ran one `npm view` child process per
+    // dependency sequentially -- for a project with 100+ deps that's
+    // 100+ network round trips done one at a time. Run them concurrently
+    // (bounded) instead; this is the single biggest speedup in the tool.
+    const entries = Object.entries(dependencies);
+    await mapLimit(entries, CONFIG.CONCURRENCY, async ([name, version]) => {
       try {
         const cleanVersion = version.replace(/^[\^~]/, "");
-        const { stdout } = await execPromise(
-          `npm view ${name} --json`
-        );
+        const { stdout } = await execPromise(`npm view ${name} --json`);
         const info = JSON.parse(stdout);
         const latestVersion =
           (info && (info["dist-tags"]?.latest || info.version)) ||
           (Array.isArray(info) ? info[0]?.version || info[0] : undefined);
 
         if (info.deprecated) {
-          deprecatedCount++;
           deprecated.push({
             name,
             current: cleanVersion,
@@ -548,8 +647,12 @@ async function checkDependencies(options = {}) {
           });
         }
 
-        if (latestVersion && semver.gt(latestVersion, cleanVersion)) {
-          outdatedCount++;
+        if (
+          latestVersion &&
+          semver.valid(semver.coerce(latestVersion)) &&
+          semver.valid(semver.coerce(cleanVersion)) &&
+          semver.gt(latestVersion, cleanVersion)
+        ) {
           updates.push({
             name,
             current: cleanVersion,
@@ -558,9 +661,14 @@ async function checkDependencies(options = {}) {
           });
         }
       } catch (error) {
-        console.log(chalk.yellow(`Could not check ${name}: ${error.message}`));
+        console.log(
+          chalk.yellow(`Could not check ${name}: ${error.message}`)
+        );
       }
-    }
+    });
+
+    const outdatedCount = updates.length;
+    const deprecatedCount = deprecated.length;
 
     spinner.succeed("Dependency check complete!");
 
@@ -681,7 +789,9 @@ async function generateApiRoutes(routes = [], targetDir = process.cwd()) {
     const apiDir = path.join(targetDir, "app/api");
     await fs.ensureDir(apiDir);
 
-    for (const route of routes) {
+    const methods = ["GET", "POST", "PUT", "DELETE"];
+
+    await mapLimit(routes, CONFIG.CONCURRENCY, async (route) => {
       const routeDir = path.join(apiDir, route);
       await fs.ensureDir(routeDir);
 
@@ -723,7 +833,7 @@ export async function ${method}(request: NextRequest) {
       console.log(
         chalk.blue.bold(`✅ API route for ${route} created successfully`)
       );
-    }
+    });
 
     console.log(chalk.green.bold(`✅ All API routes created successfully`));
   } catch (error) {
@@ -750,6 +860,15 @@ async function installPlugin(pluginName, targetDir) {
   }
 }
 
+async function installPlugins(pluginNames, targetDir) {
+  // Plugins are independent npm installs; run them concurrently instead of
+  // one at a time. fs-extra's ensureDir is idempotent so calling it from
+  // multiple concurrent installPlugin calls is safe.
+  return mapLimit(pluginNames, CONFIG.CONCURRENCY, (name) =>
+    installPlugin(name, targetDir)
+  );
+}
+
 // Command definitions
 program
   .version(CONFIG.VERSION)
@@ -759,39 +878,45 @@ program
   .option("-p, --plugins <plugins>", "Comma-separated plugins to include")
   .option("-c, --config <config>", "Path to configuration file")
   .option("--ci <provider>", "CI/CD provider to configure")
-  .option("--skip-dep-check", "Skip checking for deprecated dependencies")
+  .option("--check-deps", "Check for outdated/deprecated dependencies before generating (opt-in)")
   .action(async (options) => {
     try {
-      // Check dependencies unless skipped
-      if (!options.skipDepCheck) {
-        try {
-          const depResults = await checkDependencies({ fix: false });
-          if (depResults?.deprecated > 0) {
-            console.log(
-              chalk.yellow(
-                "\n⚠️ Some dependencies are deprecated. Run 'filegen check-deps -f' to fix them."
-              )
-            );
-          }
-        } catch (error) {
-          console.log(
-            chalk.yellow(
-              "⚠️ Dependency check failed, continuing with template generation."
-            )
-          );
-        }
-      }
-
-      // Load configuration
-      let config = {};
-      if (options.config) {
+      // Load configuration and — only if the user explicitly asked — run the
+      // dependency check.  Both are independent so fire them concurrently.
+      const configPromise = (async () => {
+        if (!options.config) return {};
         const configPath = path.resolve(process.cwd(), options.config);
         if (await fs.pathExists(configPath)) {
-          config = await fs.readJson(configPath);
           console.log(
             chalk.cyan(`📄 Using configuration from: ${options.config}`)
           );
+          return fs.readJson(configPath);
         }
+        return {};
+      })();
+
+      const depCheckPromise = options.checkDeps
+        ? checkDependencies({ fix: false }).catch(() => {
+            console.log(
+              chalk.yellow(
+                "⚠️ Dependency check failed, continuing with template generation."
+              )
+            );
+            return null;
+          })
+        : Promise.resolve(null);
+
+      const [config, depResults] = await Promise.all([
+        configPromise,
+        depCheckPromise,
+      ]);
+
+      if (depResults?.deprecated > 0) {
+        console.log(
+          chalk.yellow(
+            "\n⚠️ Some dependencies are deprecated. Run 'filegen check-deps -f' to fix them."
+          )
+        );
       }
 
       // Get template, features, and plugins
@@ -824,23 +949,30 @@ program
 
       await replaceSrcWithTemplate(template, finalProjectPath);
 
-      // Install plugins if any
-      if (plugins.length > 0) {
-        console.log(
-          chalk.cyan.bold(`\n📦 Installing plugins: ${plugins.join(", ")}...`)
-        );
-        for (const plugin of plugins) {
-          await installPlugin(plugin, finalProjectPath);
-        }
-      }
+      // Install plugins concurrently and generate CI config concurrently
+      // with that, since they touch independent parts of the project.
+      const pluginsPromise =
+        plugins.length > 0
+          ? (async () => {
+              console.log(
+                chalk.cyan.bold(
+                  `\n📦 Installing plugins: ${plugins.join(", ")}...`
+                )
+              );
+              await installPlugins(plugins, finalProjectPath);
+            })()
+          : Promise.resolve();
 
-      // Generate CI/CD config if requested
-      if (options.ci) {
-        console.log(
-          chalk.cyan.bold(`\n🚀 Configuring CI/CD with ${options.ci}...`)
-        );
-        await generateCIConfig(options.ci, finalProjectPath);
-      }
+      const ciPromise = options.ci
+        ? (async () => {
+            console.log(
+              chalk.cyan.bold(`\n🚀 Configuring CI/CD with ${options.ci}...`)
+            );
+            await generateCIConfig(options.ci, finalProjectPath);
+          })()
+        : Promise.resolve();
+
+      await Promise.all([pluginsPromise, ciPromise]);
 
       // Save configuration
       const configPath = path.join(finalProjectPath, CONFIG.FILE_NAME);
