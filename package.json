@@ -10,20 +10,18 @@
   "scripts": {
     "start": "node index.js",
     "generate": "node index.js",
-    "check-deps": "npx depcheck",
-    "update-deps": "npx npm-check-updates -u && npm install"
+    "update-deps": "npm-check-updates -u && npm install"
   },
   "dependencies": {
     "chalk": "^5.4.1",
     "commander": "^11.1.0",
     "fs-extra": "^11.3.0",
     "inquirer": "^9.3.7",
-    "npm-check-updates": "^16.14.15",
     "ora": "^8.2.0",
     "semver": "^7.7.2"
   },
   "devDependencies": {
-    "depcheck": "^1.4.7"
+    "npm-check-updates": "^22.2.3"
   },
   "author": "Raymond Ngobeni",
   "repository": {
