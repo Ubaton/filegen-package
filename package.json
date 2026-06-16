@@ -1,6 +1,6 @@
 {
   "name": "@ubaton/filegen",
-  "version": "2.0.11",
+  "version": "2.0.12",
   "description": "File structure generator CLI tool",
   "main": "index.js",
   "type": "module",

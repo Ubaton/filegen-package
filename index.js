@@ -35,7 +35,7 @@ const CONFIG = Object.freeze({
   TIMEOUT: 30000,
   MAX_RETRIES: 3,
   CACHE_TTL: 300000, // 5 minutes — refresh more often than the old 1-hour TTL
-  VERSION: "2.0.11",
+  VERSION: "2.0.12",
   // Cap concurrent filesystem/network ops so we don't exhaust FDs on big
   // structures or large dependency trees, but still run far faster than
   // sequential execution.
